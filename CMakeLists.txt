@@ -296,6 +296,12 @@ target_link_libraries(test_ast wasim-lib)
 add_executable(test_btor "apps/idpv/btor_sweeping.cpp")
 target_link_libraries(test_btor wasim-lib)
 
+add_executable(test_circuitX "apps/idpv/circuitX.cpp")
+target_link_libraries(test_circuitX wasim-lib)
+
+add_executable(test_btor_preprocess "apps/idpv/btor_preprocess.cpp")
+target_link_libraries(test_btor_preprocess wasim-lib)
+
 # add_executable(test_parallel "apps/idpv/parallel-ast.cpp")
 # target_link_libraries(test_parallel wasim-lib)
 
