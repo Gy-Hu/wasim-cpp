@@ -129,8 +129,8 @@
 128 and 1 61 127
 129 not 1 128
 130 not 1 129
-131 and 1 102 130
-132 bad 131 pass2
+131 or 1 102 130
+132 constraint 131 pass2
 133 uext 7 118 0 #0.IMP.out_a
 134 const 7 00000000000000000000000000000000
 135 uext 7 134 0 #0.IMP.output_data

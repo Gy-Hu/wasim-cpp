@@ -56,8 +56,23 @@ public:
         // compute cone of influence starting from properties
         compute_cone_of_influence();
 
-        // dump to smt2
-        dump_smt2(output_file);
+        // Get base filename without extension
+        string base_output = output_file.substr(0, output_file.find_last_of("."));
+        
+        // Get properties
+        TermVec props = ts_.prop();
+        
+        if (props.empty()) {
+            // If no properties, just dump the original way
+            dump_smt2(output_file, props);
+        } else {
+            // Generate separate files for each property
+            for (size_t i = 0; i < props.size(); i++) {
+                TermVec single_prop = {props[i]};
+                string prop_file = base_output + "_prop" + to_string(i) + ".smt2";
+                dump_smt2(prop_file, single_prop);
+            }
+        }
     }
 
 private:
@@ -92,7 +107,7 @@ private:
         return cone_vars_.find(var) != cone_vars_.end();
     }
 
-    void dump_smt2(const string & output_file) {
+    void dump_smt2(const string & output_file, const TermVec & props_to_check) {
         ofstream out(output_file);
         if (!out.is_open()) {
             throw runtime_error("Cannot open output file: " + output_file);
@@ -105,46 +120,52 @@ private:
         // declare input variables in cone
         for (const Term & var : ts_.inputvars()) {
             if (is_in_cone(var)) {
-                out << "(declare-fun " << var->to_string() 
-                    << " () " << var->get_sort()->to_string() << ")" << endl;
+                out << "(declare-fun |" << var->to_string() 
+                    << "| () " << var->get_sort()->to_string() << ")" << endl;
             }
         }
 
         // declare state variables in cone
         for (const Term & var : ts_.statevars()) {
             if (is_in_cone(var)) {
-                out << "(declare-fun " << var->to_string() 
-                    << " () " << var->get_sort()->to_string() << ")" << endl;
+                out << "(declare-fun |" << var->to_string() 
+                    << "| () " << var->get_sort()->to_string() << ")" << endl;
             }
         }
 
         // write initial state constraints
         Term init = ts_.init();
         if (!init->is_value() || init != solver_->make_term(true)) {
-            out << "(assert " << init->to_string() << ")" << endl;
+            string init_str = init->to_string();
+            out << "(assert " << init_str << ")" << endl;
         }
 
         // write transition system constraints
         Term trans = ts_.trans();
         if (!trans->is_value() || trans != solver_->make_term(true)) {
-            out << "(assert " << trans->to_string() << ")" << endl;
+            string trans_str = trans->to_string();
+            out << "(assert " << trans_str << ")" << endl;
         }
 
         // write constraints
         for (const auto & c : ts_.constraints()) {
-            out << "(assert " << c.first->to_string() << ")" << endl;
+            string constraint_str = c.first->to_string();
+            out << "(assert " << constraint_str << ")" << endl;
         }
 
         // write property constraints - negate for bad properties
-        TermVec props = ts_.prop();
-        if (props.size() == 1) {
-            out << "(assert (not " << props[0]->to_string() << "))" << endl;
-        } else if (props.size() > 1) {
-            out << "(assert (not (and";
-            for (const Term & prop : props) {
-                out << " " << prop->to_string();
+        if (!props_to_check.empty()) {
+            if (props_to_check.size() == 1) {
+                string prop_str = props_to_check[0]->to_string();
+                out << "(assert (not " << prop_str << "))" << endl;
+            } else {
+                out << "(assert (not (and";
+                for (const Term & prop : props_to_check) {
+                    string prop_str = prop->to_string();
+                    out << " " << prop_str;
+                }
+                out << ")))" << endl;
             }
-            out << ")))" << endl;
         }
 
         // end
