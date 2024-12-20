@@ -2,13 +2,23 @@ cmake_minimum_required(VERSION 3.1)
 
 project(wasim)
 
+option(WASIM_STATIC_BUILD "Build static executables" OFF)
+message(STATUS "Static build: ${WASIM_STATIC_BUILD}")
+
 set(WASIM_MAJOR 0)   # Major component of WASIM version
 set(WASIM_MINOR 1)   # Minor component of WASIM version
 set(WASIM_RELEASE 1) # Release component of WASIM version
 
-set(WASIM_LIB_TYPE STATIC)  # set wasim-lib to static
-set(BUILD_SHARED_LIBS OFF)  # set global to use static library
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")  # force static linking
+if(WASIM_STATIC_BUILD)
+    set(WASIM_LIB_TYPE STATIC)
+    set(BUILD_SHARED_LIBS OFF)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+    set(Boost_USE_STATIC_LIBS ON)
+    set(GMP_PREFER_STATIC_LIBS TRUE)
+else()
+    set(WASIM_LIB_TYPE SHARED)
+    set(BUILD_SHARED_LIBS ON)
+endif()
 
 # handle different versions of CMake
 if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0 AND NOT APPLE)
@@ -60,7 +70,6 @@ message("-- FOUND FLEX EXECUTABLE: ${FLEX_EXECUTABLE}")
 message("-- FOUND FLEX INCLUDE DIRS: ${FLEX_INCLUDE_DIRS}")
 
 
-set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 MESSAGE( STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}.")
 MESSAGE( STATUS "Boost_LIBRARY_DIRS = ${Boost_LIBRARY_DIRS}.")
@@ -75,7 +84,6 @@ set(SMT_SWITCH_DIR "${PROJECT_SOURCE_DIR}/deps/smt-switch")
 # rely on cmake modules from smt-switch (required anyway)
 set(CMAKE_MODULE_PATH ${SMT_SWITCH_DIR}/cmake)
 
-set(GMP_PREFER_STATIC_LIBS TRUE)
 find_package(GMP REQUIRED)
 
 # Check that dependencies are there
