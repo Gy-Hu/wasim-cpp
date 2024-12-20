@@ -195,7 +195,12 @@ private:
     }
 
     bool is_in_cone(const Term & var) const {
-        return cone_vars_.find(var) != cone_vars_.end();
+        // For debugging
+        if (cone_vars_.find(var) == cone_vars_.end()) {
+            std::cout << "Term not in cone: " << var->to_string() << std::endl;
+            return false;
+        }
+        return true;
     }
 
     void dump_smt2(const string & output_file, const TermVec & props_to_check) {
@@ -224,38 +229,49 @@ private:
             }
         }
 
-        // write initial state constraints
+        // write initial state constraints if they're in the cone
         Term init = ts_.init();
-        if (!init->is_value() || init != solver_->make_term(true)) {
+        if ((!init->is_value() || init != solver_->make_term(true)) && is_in_cone(init)) {
             string init_str = init->to_string();
             out << "(assert " << init_str << ")" << endl;
         }
 
-        // write transition system constraints
+        // write transition system constraints if they're in the cone
         Term trans = ts_.trans();
-        if (!trans->is_value() || trans != solver_->make_term(true)) {
+        if ((!trans->is_value() || trans != solver_->make_term(true)) && is_in_cone(trans)) {
             string trans_str = trans->to_string();
             out << "(assert " << trans_str << ")" << endl;
         }
 
-        // write constraints
+        // write constraints that are in the cone
         for (const auto & c : ts_.constraints()) {
-            string constraint_str = c.first->to_string();
-            out << "(assert " << constraint_str << ")" << endl;
+            if (is_in_cone(c.first)) {
+                string constraint_str = c.first->to_string();
+                out << "(assert " << constraint_str << ")" << endl;
+            }
         }
 
         // write property constraints - negate for bad properties
         if (!props_to_check.empty()) {
             if (props_to_check.size() == 1) {
-                string prop_str = props_to_check[0]->to_string();
-                out << "(assert (not " << prop_str << "))" << endl;
-            } else {
-                out << "(assert (not (and";
-                for (const Term & prop : props_to_check) {
-                    string prop_str = prop->to_string();
-                    out << " " << prop_str;
+                if (is_in_cone(props_to_check[0])) {
+                    string prop_str = props_to_check[0]->to_string();
+                    out << "(assert (not " << prop_str << "))" << endl;
                 }
-                out << ")))" << endl;
+            } else {
+                bool any_in_cone = false;
+                string and_expr = "(assert (not (and";
+                for (const Term & prop : props_to_check) {
+                    if (is_in_cone(prop)) {
+                        string prop_str = prop->to_string();
+                        and_expr += " " + prop_str;
+                        any_in_cone = true;
+                    }
+                }
+                and_expr += ")))";
+                if (any_in_cone) {
+                    out << and_expr << endl;
+                }
             }
         }
 
