@@ -6,6 +6,9 @@ set(WASIM_MAJOR 0)   # Major component of WASIM version
 set(WASIM_MINOR 1)   # Minor component of WASIM version
 set(WASIM_RELEASE 1) # Release component of WASIM version
 
+set(WASIM_LIB_TYPE STATIC)  # set wasim-lib to static
+set(BUILD_SHARED_LIBS OFF)  # set global to use static library
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")  # force static linking
 
 # handle different versions of CMake
 if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0 AND NOT APPLE)
@@ -57,6 +60,7 @@ message("-- FOUND FLEX EXECUTABLE: ${FLEX_EXECUTABLE}")
 message("-- FOUND FLEX INCLUDE DIRS: ${FLEX_INCLUDE_DIRS}")
 
 
+set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 MESSAGE( STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}.")
 MESSAGE( STATUS "Boost_LIBRARY_DIRS = ${Boost_LIBRARY_DIRS}.")
@@ -71,6 +75,7 @@ set(SMT_SWITCH_DIR "${PROJECT_SOURCE_DIR}/deps/smt-switch")
 # rely on cmake modules from smt-switch (required anyway)
 set(CMAKE_MODULE_PATH ${SMT_SWITCH_DIR}/cmake)
 
+set(GMP_PREFER_STATIC_LIBS TRUE)
 find_package(GMP REQUIRED)
 
 # Check that dependencies are there
@@ -144,23 +149,23 @@ set_target_properties(wasim-lib PROPERTIES OUTPUT_NAME wasim)
 
 target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
-target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
-target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
-target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
-target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
-target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
-target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
-target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
-target_link_libraries(wasim-lib PUBLIC pthread)
-target_link_libraries(wasim-lib PUBLIC Boost::system)
+target_link_libraries(wasim-lib PUBLIC 
+    "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a"
+    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a"
+    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a"
+    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a"
+    "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a"
+    "/usr/local/lib/x86_64-linux-gnu/libgmpxx.a"
+    "/usr/local/lib/x86_64-linux-gnu/libgmp.a"
+    pthread
+    ${Boost_LIBRARIES}
+    gflags
+)
 
 find_library(UNWIND_LIB unwind)
 if(UNWIND_LIB)
     target_link_libraries(wasim-lib PUBLIC ${UNWIND_LIB})
 endif()
-
-find_package(gflags REQUIRED)
-target_link_libraries(wasim-lib PUBLIC gflags)
 
 # if (LIBRT)
 #   target_link_libraries(wasim-lib PUBLIC ${LIBRT})
