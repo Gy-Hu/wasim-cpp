@@ -86,6 +86,9 @@ if (NOT EXISTS "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
   message(FATAL_ERROR "Missing smt-switch boolector library -- try running ./contrib/setup-smt-switch.sh")
 endif()
 
+if (NOT EXISTS "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
+  message(FATAL_ERROR "Missing smt-switch bitwuzla library -- try running ./contrib/setup-smt-switch.sh")
+endif()
 
 
 if (NOT EXISTS "${PROJECT_SOURCE_DIR}/deps/btor2tools/src")
@@ -144,15 +147,26 @@ set_target_properties(wasim-lib PROPERTIES OUTPUT_NAME wasim)
 
 target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
+# Find Bitwuzla
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(BITWUZLA REQUIRED bitwuzla)
+
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC pthread)
 target_link_libraries(wasim-lib PUBLIC Boost::system)
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/libbitwuzla.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/lib/libbitwuzlabb.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/lib/libbitwuzlabv.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/lib/libbitwuzlals.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/lib/libbzlarng.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/build/src/libbzlautil.a")
 
 find_library(UNWIND_LIB unwind)
 if(UNWIND_LIB)
