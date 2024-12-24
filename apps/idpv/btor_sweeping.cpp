@@ -49,7 +49,7 @@ public:
 void create_lut(Term term) {
     // term: (store (store (store ... (store array index elemnent) ...)))
     // create a lookup table for each index
-    std::unordered_map<std::string, std::string> lut; // term is smart pointer
+    std::unordered_map<Term, Term> lut; // term is smart pointer
 
     // Traverse nested stored op
     Term current = term;
@@ -64,11 +64,12 @@ void create_lut(Term term) {
         Term value = children[2];   // sotred value
 
         // insert index and value
-        std::cout<< "stored position:" <<std::endl;
+        std::cout<< "stored" <<std::endl;
         std::cout<< "stored position" << index->to_string().c_str() << std::endl;
         std::cout<< "stored value" << value->to_string().c_str() << std::endl;
 
-        lut[index->to_string()] = value->to_string();
+        // lut[index->to_string()] = value->to_string();
+        lut[index] = value;
         current = array; // next iteration
     }
     // print lut

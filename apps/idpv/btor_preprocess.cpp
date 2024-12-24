@@ -10,7 +10,6 @@
 #include <fstream>
 #include <unordered_set>
 #include <queue>
-#include <stack>
 
 using namespace wasim;
 using namespace smt;
@@ -22,8 +21,9 @@ public:
     ConeOfInfluence(SmtSolver & solver) : IdentityWalker(solver, false) {}
 
     unordered_set<Term> get_cone(const Term & root) {
+        // Create a non-const copy for visiting
         Term root_copy = root;
-        visit_and_analyze(root_copy);
+        visit(root_copy);
         return cone_;
     }
 
@@ -32,103 +32,12 @@ protected:
         if (cone_.find(term) != cone_.end()) {
             return Walker_Continue;
         }
-
-        // Skip if term is a constant value that doesn't affect the property
-        if (term->is_value()) {
-            if (is_neutral_constant(term)) {
-                std::cout << "Skipping neutral constant: " << term->to_string() << std::endl;
-                return Walker_Continue;
-            }
-        }
-
-        // Analyze operation type and decide whether to include term
-        if (!term->is_value() && !term->is_symbol()) {
-            Op op = term->get_op();
-            if (can_eliminate_term(term, op)) {
-                std::cout << "Skipping eliminable term: " << term->to_string() << std::endl;
-                return Walker_Continue;
-            }
-        }
-
         cone_.insert(term);
         return Walker_Continue;
     }
 
 private:
     unordered_set<Term> cone_;
-    
-    void visit_and_analyze(Term & root) {
-        stack<pair<Term, bool>> node_stack;
-        unordered_set<Term> visited;
-        
-        node_stack.push({root, false});
-        
-        while (!node_stack.empty()) {
-            auto [current, is_processed] = node_stack.top();
-            node_stack.pop();
-            
-            if (!is_processed) {
-                // Push back the node as processed
-                node_stack.push({current, true});
-                
-                // Push all children
-                for (auto it = current->begin(); it != current->end(); ++it) {
-                    if (visited.find(*it) == visited.end()) {
-                        node_stack.push({*it, false});
-                        visited.insert(*it);
-                    }
-                }
-            } else {
-                // Process the node
-                visit_term(current);
-            }
-        }
-    }
-
-    bool is_neutral_constant(const Term & term) const {
-        // Check if the constant is a neutral value (like 0 for OR, 1 for AND)
-        if (term->is_value()) {
-            string val = term->to_string();
-            if (val == "#b0" || val == "#b1") {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    bool can_eliminate_term(const Term & term, const Op & op) const {
-        // Analyze if the term can be eliminated based on its operation
-        if (op.is_null()) return false;
-
-        switch (op.prim_op) {
-            case PrimOp::BVAnd:
-            case PrimOp::BVOr: {
-                // Check if one of the operands is a neutral value
-                Term term_copy = term;  // Create non-const copy
-                for (auto it = term_copy->begin(); it != term_copy->end(); ++it) {
-                    if ((*it)->is_value() && is_neutral_constant(*it)) {
-                        return true;
-                    }
-                }
-                break;
-            }
-            
-            case PrimOp::Concat: {
-                // If concatenating with zero, we might be able to eliminate
-                Term term_copy = term;  // Create non-const copy
-                for (auto it = term_copy->begin(); it != term_copy->end(); ++it) {
-                    if ((*it)->is_value() && (*it)->to_string() == "#b0") {
-                        return true;
-                    }
-                }
-                break;
-            }
-
-            default:
-                break;
-        }
-        return false;
-    }
 };
 
 class BtorPreprocessor {
@@ -195,12 +104,7 @@ private:
     }
 
     bool is_in_cone(const Term & var) const {
-        // For debugging
-        if (cone_vars_.find(var) == cone_vars_.end()) {
-            std::cout << "Term not in cone: " << var->to_string() << std::endl;
-            return false;
-        }
-        return true;
+        return cone_vars_.find(var) != cone_vars_.end();
     }
 
     void dump_smt2(const string & output_file, const TermVec & props_to_check) {
@@ -229,49 +133,38 @@ private:
             }
         }
 
-        // write initial state constraints if they're in the cone
+        // write initial state constraints
         Term init = ts_.init();
-        if ((!init->is_value() || init != solver_->make_term(true)) && is_in_cone(init)) {
+        if (!init->is_value() || init != solver_->make_term(true)) {
             string init_str = init->to_string();
             out << "(assert " << init_str << ")" << endl;
         }
 
-        // write transition system constraints if they're in the cone
+        // write transition system constraints
         Term trans = ts_.trans();
-        if ((!trans->is_value() || trans != solver_->make_term(true)) && is_in_cone(trans)) {
+        if (!trans->is_value() || trans != solver_->make_term(true)) {
             string trans_str = trans->to_string();
             out << "(assert " << trans_str << ")" << endl;
         }
 
-        // write constraints that are in the cone
+        // write constraints
         for (const auto & c : ts_.constraints()) {
-            if (is_in_cone(c.first)) {
-                string constraint_str = c.first->to_string();
-                out << "(assert " << constraint_str << ")" << endl;
-            }
+            string constraint_str = c.first->to_string();
+            out << "(assert " << constraint_str << ")" << endl;
         }
 
         // write property constraints - negate for bad properties
         if (!props_to_check.empty()) {
             if (props_to_check.size() == 1) {
-                if (is_in_cone(props_to_check[0])) {
-                    string prop_str = props_to_check[0]->to_string();
-                    out << "(assert (not " << prop_str << "))" << endl;
-                }
+                string prop_str = props_to_check[0]->to_string();
+                out << "(assert (not " << prop_str << "))" << endl;
             } else {
-                bool any_in_cone = false;
-                string and_expr = "(assert (not (and";
+                out << "(assert (not (and";
                 for (const Term & prop : props_to_check) {
-                    if (is_in_cone(prop)) {
-                        string prop_str = prop->to_string();
-                        and_expr += " " + prop_str;
-                        any_in_cone = true;
-                    }
+                    string prop_str = prop->to_string();
+                    out << " " << prop_str;
                 }
-                and_expr += ")))";
-                if (any_in_cone) {
-                    out << and_expr << endl;
-                }
+                out << ")))" << endl;
             }
         }
 
