@@ -66,11 +66,12 @@ if [ ! -d "$DEPS/smt-switch" ]; then
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
     ./contrib/setup-btor.sh
+    cd deps
+    wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.1.1/cvc5-Linux-static.zip
+    unzip cvc5-Linux-static.zip -d .
+    cd ..
     if [ $WITH_BITWUZLA = ON ]; then
         ./contrib/setup-bitwuzla.sh
-    fi
-    if [ $cvc5_home = default ]; then
-        ./contrib/setup-cvc5.sh
     fi
     
     # pass bison/flex directories from smt-switch perspective
