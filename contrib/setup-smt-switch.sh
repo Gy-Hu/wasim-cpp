@@ -8,11 +8,11 @@ SMT_SWITCH_VERSION=b812cc4bddddde33d2fd05f4044f4fcfb8d648d8
 usage () {
     cat <<EOF
 Usage: $0 [<option> ...]
-
 Sets up the smt-switch API for interfacing with SMT solvers through a C++ API.
-
 -h, --help              display this message and exit
 --with-msat             include MathSAT which is under a custom non-BSD compliant license (default: off)
+--with-bitwuzla         build with Bitwuzla  (default: off)
+--cvc5-home             use an already downloaded version of cvc5
 --python                build python bindings (default: off)
 EOF
     exit 0
@@ -27,6 +27,7 @@ WITH_MSAT=default
 CONF_OPTS=""
 WITH_PYTHON=default
 cvc5_home=default
+WITH_BITWUZLA=default
 
 while [ $# -gt 0 ]
 do
@@ -38,6 +39,19 @@ do
         --python)
             WITH_PYTHON=YES
             CONF_OPTS="$CONF_OPTS --python";;
+        --with-bitwuzla)
+            WITH_BITWUZLA=ON
+            CONF_OPTS="$CONF_OPTS --bitwuzla";;
+        --cvc5-home=*)
+            cvc5_home=${1##*=}
+            # Check if cvc5_home is an absolute path and if not, make it
+            # absolute.
+            case $cvc5_home in
+                /*) ;;                            # absolute path
+                *) cvc5_home=$(pwd)/$cvc5_home ;; # make absolute path
+            esac
+            CONF_OPTS="$CONF_OPTS --cvc5-home=$cvc5_home"
+            ;;
         *) die "unexpected argument: $1";;
     esac
     shift
@@ -51,14 +65,16 @@ if [ ! -d "$DEPS/smt-switch" ]; then
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
     ./contrib/setup-btor.sh
-    cd deps
-    wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.1.2/cvc5-Linux-static.zip
-    unzip cvc5-Linux-static.zip -d .
-    cd ..
-    CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5-Linux-static"
+    if [ $cvc5_home = default ]; then
+        ./contrib/setup-cvc5.sh
+    fi
+    # CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5-Linux-static"
+    if [ $WITH_BITWUZLA = ON ]; then
+        ./contrib/setup-bitwuzla.sh
+    fi
     
     # pass bison/flex directories from smt-switch perspective
-    ./configure.sh --btor --cvc5 $CONF_OPTS --prefix=local --static --smtlib-reader --bison-dir=../bison/bison-install --flex-dir=../flex/flex-install
+    ./configure.sh --btor --cvc5 --bitwuzla $CONF_OPTS --prefix=local --static --smtlib-reader --bison-dir=../bison/bison-install --flex-dir=../flex/flex-install
     cd build
     make -j$(nproc)
     # TODO put this back

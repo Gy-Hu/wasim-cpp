@@ -167,7 +167,7 @@ int main() {
     // cout << "Starting program...\n";
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    SmtSolver solver = BoolectorSolverFactory::create(false);
+    SmtSolver solver = BitwuzlaSolverFactory::create(false);
 
     solver->set_logic("QF_UFBV");
     solver->set_opt("incremental", "true");
