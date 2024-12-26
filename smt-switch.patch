@@ -1,0 +1,118 @@
+diff --git a/.gitignore b/.gitignore
+index b01e63a..4d30e77 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -40,6 +40,7 @@ dist/
+ deps/CVC4/
+ 
+ deps/
++deps/cvc5/
+ 
+ local/
+ .cache/
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1574814..30e008e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -6,6 +6,15 @@ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_CXX_EXTENSIONS OFF)
+ 
++# Add compiler flags to fix linking issues
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fno-omit-frame-pointer")
++set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined -Wl,--no-allow-shlib-undefined")
++set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--eh-frame-hdr")
++
++# Add linker flag to allow multiple definitions
++set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
++set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--allow-multiple-definition")
++
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+ 
+diff --git a/btor/CMakeLists.txt b/btor/CMakeLists.txt
+index 65028ff..0558b75 100644
+--- a/btor/CMakeLists.txt
++++ b/btor/CMakeLists.txt
+@@ -31,7 +31,7 @@ if (SMT_SWITCH_LIB_TYPE STREQUAL STATIC)
+       mkdir boolector && cd boolector && ar -x "${BTOR_HOME}/build/lib/libboolector.a" &&
+       # ar -x "${BTOR_HOME}/deps/cadical/build/libcadical.a" &&
+       ar -x "${BTOR_HOME}/deps/btor2tools/build/lib/libbtor2parser.a" && cd ../ &&
+-      ar -qc "$<TARGET_FILE_NAME:smt-switch-btor>" ./boolector/*.o ./smt-switch-btor/*.o &&
++      ar -rcs "$<TARGET_FILE_NAME:smt-switch-btor>" ./boolector/*.o ./smt-switch-btor/*.o &&
+       # now clean up
+       rm -rf smt-switch-btor boolector
+     DEPENDS
+diff --git a/contrib/setup-cvc5.sh b/contrib/setup-cvc5.sh
+index b6f7be1..13fecac 100755
+--- a/contrib/setup-cvc5.sh
++++ b/contrib/setup-cvc5.sh
+@@ -18,10 +18,9 @@ fi
+ 
+ if [ ! -d "$DEPS/cvc5" ]; then
+     cd $DEPS
+-    git clone https://github.com/cvc5/cvc5.git
++    git clone --branch ${CVC5_VERSION} --depth 1 https://github.com/cvc5/cvc5.git
+     chmod -R 777 cvc5
+     cd cvc5
+-    git checkout -f ${CVC5_VERSION}
+     CXXFLAGS=-fPIC CFLAGS=-fPIC ./configure.sh --static --auto-download
+     cd build
+     make -j$NUM_CORES
+@@ -38,4 +37,4 @@ else
+     echo "You might be missing some dependencies."
+     echo "Please see their github page for installation instructions: https://github.com/cvc5/cvc5"
+     exit 1
+-fi
++fi
+\ No newline at end of file
+diff --git a/cvc5/CMakeLists.txt b/cvc5/CMakeLists.txt
+index e0c908e..24f9dd7 100644
+--- a/cvc5/CMakeLists.txt
++++ b/cvc5/CMakeLists.txt
+@@ -11,11 +11,8 @@ add_library(smt-switch-cvc5 "${SMT_SWITCH_LIB_TYPE}"
+   )
+ target_include_directories (smt-switch-cvc5 PUBLIC "${PROJECT_SOURCE_DIR}/include")
+ target_include_directories (smt-switch-cvc5 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+-target_include_directories (smt-switch-cvc5 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/cvc5/include")
+ target_include_directories (smt-switch-cvc5 PUBLIC "${CVC5_HOME}/include")
+-#target_include_directories (smt-switch-cvc5 PUBLIC "${CVC5_HOME}/src/include")
+-# TEMP only until the internal kinds are no longer part of public API
+-#target_include_directories (smt-switch-cvc5 PUBLIC "${CVC5_HOME}/build/include")
++target_include_directories (smt-switch-cvc5 PUBLIC "${CVC5_HOME}/build/include")
+ target_include_directories (smt-switch-cvc5 PUBLIC ${GMP_INCLUDE_DIR})
+ 
+ if (LIBRT)
+@@ -24,18 +21,18 @@ endif()
+ 
+ find_library(POLYLIB REQUIRED
+              NAMES libpicpoly.a
+-             PATHS "${CVC5_HOME}/lib")
++             PATHS "${CVC5_HOME}/build/deps/lib")
+ 
+ find_library(POLYLIBXX REQUIRED
+              NAMES libpicpolyxx.a
+-             PATHS "${CVC5_HOME}/lib")
++             PATHS "${CVC5_HOME}/build/deps/lib")
+ 
+ find_library(CADICAL REQUIRED
+              NAMES libcadical.a libcadical.so libcadical.dylib
+-             PATHS "${CVC5_HOME}/lib")
++             PATHS "${CVC5_HOME}/build/deps/lib")
+ 
+-target_link_libraries(smt-switch-cvc5 "${CVC5_HOME}/lib/libcvc5.a")
+-target_link_libraries(smt-switch-cvc5 "${CVC5_HOME}/lib/libcvc5parser.a")
++target_link_libraries(smt-switch-cvc5 "${CVC5_HOME}/build/src/libcvc5.a")
++target_link_libraries(smt-switch-cvc5 "${CVC5_HOME}/build/src/parser/libcvc5parser.a")
+ target_link_libraries(smt-switch-cvc5 "${POLYLIBXX}")
+ target_link_libraries(smt-switch-cvc5 "${POLYLIB}")
+ target_link_libraries(smt-switch-cvc5 "${CADICAL}")
+@@ -50,7 +47,7 @@ if (SMT_SWITCH_LIB_TYPE STREQUAL STATIC)
+     COMMAND
+       mkdir ssc-working && cd ssc-working &&
+       # create new static library that combines them all
+-      ${PROJECT_SOURCE_DIR}/scripts/repack-static-lib.sh "$<TARGET_FILE_NAME:smt-switch-cvc5>" "${CVC5_HOME}/lib/libcvc5.a" "${POLYLIBXX}" "${POLYLIB}" "${CADICAL}"  "../$<TARGET_FILE_NAME:smt-switch-cvc5>" &&
++      ${PROJECT_SOURCE_DIR}/scripts/repack-static-lib.sh "$<TARGET_FILE_NAME:smt-switch-cvc5>" "${CVC5_HOME}/build/src/libcvc5.a" "${POLYLIBXX}" "${POLYLIB}" "${CADICAL}"  "../$<TARGET_FILE_NAME:smt-switch-cvc5>" &&
+       # replace the original one
+       mv "$<TARGET_FILE_NAME:smt-switch-cvc5>" "../$<TARGET_FILE_NAME:smt-switch-cvc5>" &&
+       # now clean up the temporary directory
