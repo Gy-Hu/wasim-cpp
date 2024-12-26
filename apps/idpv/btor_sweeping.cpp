@@ -519,28 +519,14 @@ int main() {
     print_time();
     std::cout << "Start checking sat" << std::endl;
 
-    solver->assert_formula(solver->make_term(Not, root));
+    auto key_eq = solver->make_term(Equal, a_key_term, b_key_term);
+    auto input_eq = solver->make_term(Equal, a_input_term, b_input_term);
+    auto output_eq = solver->make_term(Equal, a_output_term, b_output_term);
 
-    // (1) 在完成对 sts1.init() / sts2.init 和各种constraints断言之后，
-    //     但在正式"check_sat"之前，先让输入密钥在时序展开中保持不变
-    //     如果想让 key/input 在10个周期都一致，可加类似以下约束：
-    // solver->assert_formula(solver->make_term(Equal, a_key_term, sts1.next(a_key_term)));
-    // solver->assert_formula(solver->make_term(Equal, a_input_term, sts1.next(a_input_term)));
-    // solver->assert_formula(solver->make_term(Equal, b_key_term, sts2.next(b_key_term)));
-    // solver->assert_formula(solver->make_term(Equal, b_input_term, sts2.next(b_input_term)));
+    solver->assert_formula(key_eq);
+    solver->assert_formula(input_eq);
 
-    // (2) 多周期展开 10 次，让电路真的"跑"10个clock cycle
-    int unroll_cycles = 10;
-    for (int c = 0; c < unroll_cycles; ++c)
-    {
-        // 将 transition relation 加入到求解器，模拟一次时钟上升沿
-        solver->assert_formula(sts1.trans());
-        solver->assert_formula(sts2.trans());
-    }
-
-    // (3) 现在才对比最终输出：只有经历了 10 轮后，AES 才有最终加密结果
-    Term final_eq = solver->make_term(Equal, a_output_term, b_output_term);
-    solver->assert_formula(solver->make_term(Not, final_eq));
+    solver->assert_formula(solver->make_term(Not, output_eq));
 
 
     auto res = solver->check_sat();
