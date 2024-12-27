@@ -8,190 +8,190 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include <unordered_set>
-#include <queue>
+#include <chrono>
+#include <memory>
+#include <vector>
 
 using namespace wasim;
 using namespace smt;
 using namespace std;
 
-class ConeOfInfluence : public IdentityWalker
-{
-public:
-    ConeOfInfluence(SmtSolver & solver) : IdentityWalker(solver, false) {}
-
-    unordered_set<Term> get_cone(const Term & root) {
-        // Create a non-const copy for visiting
-        Term root_copy = root;
-        visit(root_copy);
-        return cone_;
-    }
-
-protected:
-    WalkerStepResult visit_term(Term & term) override {
-        if (cone_.find(term) != cone_.end()) {
-            return Walker_Continue;
-        }
-        cone_.insert(term);
-        return Walker_Continue;
-    }
-
-private:
-    unordered_set<Term> cone_;
-};
-
 class BtorPreprocessor {
 private:
     SmtSolver solver_;
     TransitionSystem ts_;
-    unordered_set<Term> cone_vars_;
+    static constexpr size_t BUFFER_SIZE = 64 * 1024 * 1024;  // 64MB buffer
     
-public:
-    BtorPreprocessor(SmtSolver & solver) : solver_(solver), ts_(solver) {}
-
-    void preprocess(const string & input_file, const string & output_file) {
-        // parse btor2 file
-        BTOR2Encoder encoder(input_file, ts_);
-
-        // compute cone of influence starting from properties
-        compute_cone_of_influence();
-
-        // Get base filename without extension
-        string base_output = output_file.substr(0, output_file.find_last_of("."));
+    // 写入变量声明
+    void write_vars(ofstream& out, const UnorderedTermSet& vars, const string& type) {
+        size_t count = 0;
+        size_t total = vars.size();
         
-        // Get properties
-        TermVec props = ts_.prop();
-        
-        if (props.empty()) {
-            // If no properties, just dump the original way
-            dump_smt2(output_file, props);
-        } else {
-            // Generate separate files for each property
-            for (size_t i = 0; i < props.size(); i++) {
-                TermVec single_prop = {props[i]};
-                string prop_file = base_output + "_prop" + to_string(i) + ".smt2";
-                dump_smt2(prop_file, single_prop);
+        for (const Term& var : vars) {
+            out << "(declare-fun |" << var->to_string() 
+                << "| () " << var->get_sort()->to_string() << ")\n";
+                
+            if (++count % 100000 == 0) {  // 每10万个变量报告一次进度
+                cout << "Processed " << count << "/" << total << " " << type << "\n";
+                out.flush();  // 定期刷新，避免数据积累太多
+            }
+        }
+        if (count % 100000 != 0) {  // 最后一次刷新
+            out.flush();
+        }
+    }
+
+    // 写入约束
+    void write_constraint(ofstream& out, const Term& constraint) {
+        if (!constraint->is_value()) {
+            out << "(assert " << constraint->to_string() << ")\n";
+        }
+    }
+
+    // 写入属性
+    void write_properties(ofstream& out, const TermVec& props) {
+        if (!props.empty()) {
+            if (props.size() == 1) {
+                out << "(assert (not " << props[0]->to_string() << "))\n";
+            } else {
+                out << "(assert (not (and";
+                for (const Term& prop : props) {
+                    out << " " << prop->to_string();
+                }
+                out << ")))\n";
             }
         }
     }
 
-private:
-    void compute_cone_of_influence() {
-        ConeOfInfluence coi(solver_);
+public:
+    BtorPreprocessor() : 
+        solver_(BoolectorSolverFactory::create(false)),
+        ts_(solver_)
+    {
+        solver_->set_logic("QF_BV");
+        solver_->set_opt("incremental", "true");
+    }
+
+    void preprocess(const string& input_file, const string& output_file) {
+        // 获取输入文件大小用于进度报告
+        ifstream in(input_file, ios::ate | ios::binary);
+        if (!in.is_open()) {
+            throw runtime_error("Cannot open input file: " + input_file);
+        }
+        size_t file_size = in.tellg();
+        in.close();
+
+        cout << "Processing BTOR2 file of size: " << file_size / (1024*1024) << "MB\n";
         
-        // Start from properties
-        TermVec props = ts_.prop();
-        for (const Term & prop : props) {
-            auto prop_cone = coi.get_cone(prop);
-            cone_vars_.insert(prop_cone.begin(), prop_cone.end());
+        // 解析 BTOR2 文件
+        auto parse_start = chrono::steady_clock::now();
+        cout << "Parsing BTOR2 file...\n";
+        BTOR2Encoder encoder(input_file, ts_);
+        auto parse_end = chrono::steady_clock::now();
+        auto parse_duration = chrono::duration_cast<chrono::seconds>(parse_end - parse_start);
+        cout << "Parsing completed in " << parse_duration.count() << " seconds.\n";
+
+        // 生成 SMT2 文件
+        cout << "Generating SMT2 files...\n";
+        auto gen_start = chrono::steady_clock::now();
+
+        // 获取所有 bad properties
+        const TermVec& props = ts_.prop();
+        
+        // 为每个 property 生成单独的 SMT2 文件
+        for (size_t i = 0; i < props.size(); ++i) {
+            // 构造输出文件名：在扩展名前插入属性编号
+            string prop_output_file = output_file;
+            auto dot_pos = prop_output_file.find_last_of('.');
+            if (dot_pos != string::npos) {
+                prop_output_file.insert(dot_pos, "_prop" + to_string(i));
+            } else {
+                prop_output_file += "_prop" + to_string(i);
+            }
+            
+            cout << "\nGenerating SMT2 file for property " << i << "...\n";
+            TermVec single_prop = {props[i]};  // 只包含当前属性
+            dump_smt2(prop_output_file, single_prop);
         }
 
-        // Include variables from transition relation that affect properties
-        Term trans = ts_.trans();
-        auto trans_cone = coi.get_cone(trans);
-        cone_vars_.insert(trans_cone.begin(), trans_cone.end());
-
-        // Include variables from initial state that affect properties
-        Term init = ts_.init();
-        auto init_cone = coi.get_cone(init);
-        cone_vars_.insert(init_cone.begin(), init_cone.end());
-
-        // Include variables from constraints
-        for (const auto & c : ts_.constraints()) {
-            auto constraint_cone = coi.get_cone(c.first);
-            cone_vars_.insert(constraint_cone.begin(), constraint_cone.end());
-        }
+        auto gen_end = chrono::steady_clock::now();
+        auto gen_duration = chrono::duration_cast<chrono::seconds>(gen_end - gen_start);
+        cout << "SMT2 generation completed in " << gen_duration.count() << " seconds.\n";
     }
 
-    bool is_in_cone(const Term & var) const {
-        return cone_vars_.find(var) != cone_vars_.end();
-    }
-
-    void dump_smt2(const string & output_file, const TermVec & props_to_check) {
-        ofstream out(output_file);
+    void dump_smt2(const string& output_file, const TermVec& props_to_check) {
+        ofstream out(output_file, ios::binary);
         if (!out.is_open()) {
             throw runtime_error("Cannot open output file: " + output_file);
         }
+        
+        // 设置文件缓冲区
+        vector<char> buffer(BUFFER_SIZE);
+        out.rdbuf()->pubsetbuf(buffer.data(), BUFFER_SIZE);
 
-        // write header
-        out << ";; Generated by IDPV Btor2 Preprocessor" << endl;
-        out << "(set-logic QF_BV)" << endl;
+        // 写入头部
+        out << ";; Generated by IDPV Btor2 Preprocessor\n(set-logic QF_BV)\n";
 
-        // declare input variables in cone
-        for (const Term & var : ts_.inputvars()) {
-            if (is_in_cone(var)) {
-                out << "(declare-fun |" << var->to_string() 
-                    << "| () " << var->get_sort()->to_string() << ")" << endl;
+        // 写入变量声明
+        cout << "Writing input variables...\n";
+        write_vars(out, ts_.inputvars(), "input variables");
+
+        cout << "Writing state variables...\n";
+        write_vars(out, ts_.statevars(), "state variables");
+
+        // 写入初始状态
+        cout << "Writing initial state...\n";
+        write_constraint(out, ts_.init());
+        out.flush();
+
+        // 写入约束
+        cout << "Writing constraints...\n";
+        size_t constraint_count = 0;
+        size_t total_constraints = ts_.constraints().size();
+        
+        for (const auto& c : ts_.constraints()) {
+            write_constraint(out, c.first);
+            if (++constraint_count % 100000 == 0) {  // 每10万个约束报告一次进度
+                cout << "Processed " << constraint_count << "/" << total_constraints << " constraints\n";
+                out.flush();
             }
         }
-
-        // declare state variables in cone
-        for (const Term & var : ts_.statevars()) {
-            if (is_in_cone(var)) {
-                out << "(declare-fun |" << var->to_string() 
-                    << "| () " << var->get_sort()->to_string() << ")" << endl;
-            }
+        if (constraint_count % 100000 != 0) {  // 最后一次刷新
+            out.flush();
         }
 
-        // write initial state constraints
-        Term init = ts_.init();
-        if (!init->is_value() || init != solver_->make_term(true)) {
-            string init_str = init->to_string();
-            out << "(assert " << init_str << ")" << endl;
-        }
+        // 写入属性
+        cout << "Writing properties...\n";
+        write_properties(out, props_to_check);
 
-        // write transition system constraints
-        Term trans = ts_.trans();
-        if (!trans->is_value() || trans != solver_->make_term(true)) {
-            string trans_str = trans->to_string();
-            out << "(assert " << trans_str << ")" << endl;
-        }
-
-        // write constraints
-        for (const auto & c : ts_.constraints()) {
-            string constraint_str = c.first->to_string();
-            out << "(assert " << constraint_str << ")" << endl;
-        }
-
-        // write property constraints - negate for bad properties
-        if (!props_to_check.empty()) {
-            if (props_to_check.size() == 1) {
-                string prop_str = props_to_check[0]->to_string();
-                out << "(assert (not " << prop_str << "))" << endl;
-            } else {
-                out << "(assert (not (and";
-                for (const Term & prop : props_to_check) {
-                    string prop_str = prop->to_string();
-                    out << " " << prop_str;
-                }
-                out << ")))" << endl;
-            }
-        }
-
-        // end
-        out << "(check-sat)" << endl;
-        out << "(exit)" << endl;
+        // 写入结尾
+        out << "(check-sat)\n(exit)\n";
+        out.flush();
         out.close();
+        
+        cout << "SMT2 file generation completed.\n";
     }
 };
 
-int main(int argc, char ** argv) {
+int main(int argc, char** argv) {
     if (argc != 3) {
         cerr << "Usage: " << argv[0] << " <input.btor2> <output.smt2>" << endl;
         return 1;
     }
 
     try {
-        SmtSolver solver = BoolectorSolverFactory::create(false);
-        solver->set_logic("QF_BV");
-        solver->set_opt("produce-models", "true");
-        solver->set_opt("incremental", "true");
-        BtorPreprocessor preprocessor(solver);
+        cout << "Starting BTOR2 to SMT2 conversion...\n";
+        auto total_start = chrono::steady_clock::now();
+        
+        BtorPreprocessor preprocessor;
         preprocessor.preprocess(argv[1], argv[2]);
-        cout << "Preprocessing completed successfully." << endl;
+        
+        auto total_end = chrono::steady_clock::now();
+        auto total_duration = chrono::duration_cast<chrono::seconds>(total_end - total_start);
+        cout << "Total conversion completed in " << total_duration.count() << " seconds.\n";
         return 0;
     }
-    catch (const exception & e) {
+    catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
         return 1;
     }
