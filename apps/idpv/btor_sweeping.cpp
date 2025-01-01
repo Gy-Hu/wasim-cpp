@@ -95,6 +95,33 @@ void create_lut(Term current, std::unordered_map<std::string, std::string>& lut)
     }
 }
 
+
+// void create_lut(Term current, std::unordered_map<std::string, std::string>& lut, std::unordered_map<Term, Term>& substitution_map) {
+//     assert(current != nullptr);
+//     Term original = current;
+//     substitution_map[original] = original;  // create mapping for the original term
+
+//     while (current->get_op().prim_op == PrimOp::Store) {
+//         auto children = TermVec(current->begin(), current->end());
+//         assert(children.size() == 3);
+        
+//         auto array = children[0];
+//         auto index = children[1];
+//         auto value = children[2];
+
+//         // create mapping for sub-terms
+//         substitution_map[current] = current;
+//         substitution_map[array] = array;
+//         substitution_map[index] = index;  
+//         substitution_map[value] = value;  
+
+//         lut[index->to_string().substr(2)] = value->to_string().substr(2);
+//         current = array;
+//     }
+
+//     substitution_map[current] = current;
+// }
+
 void btor_bv_operation_1child(const smt::Op& op, 
                               const BtorBitVector& btor_child_1, 
                               NodeData &nd) {    
@@ -170,8 +197,7 @@ void process_child_simulation(Term child,
                               bool substitution_happened) {
     Term substitution_child;
     if(child->get_sort()->get_sort_kind() != ARRAY){
-        cout << "child here1: " << child->to_string() << endl;
-        assert(substitution_map.find(child) != substitution_map.end()); //FIXME:
+        assert(substitution_map.find(child) != substitution_map.end());
         substitution_child = substitution_map.at(child);
         substitution_happened = (child != substitution_child);
     }
@@ -276,8 +302,7 @@ void process_three_children_simulation(smt::TermVec& children,
     // Check each child for substitution
     for (int i = 0; i < 3; ++i) {
         if(children[i]->get_sort()->get_sort_kind() != ARRAY){
-            cout << "child here3: " << children[i]->to_string() << endl;
-            assert(substitution_map.find(children[i]) != substitution_map.end()); //FIXME:
+            assert(substitution_map.find(children[i]) != substitution_map.end());
             auto substitution_child = substitution_map.at(children[i]);
 
             if (children[i] != substitution_child) {  // substitution happened
@@ -314,10 +339,6 @@ void process_three_children_simulation(smt::TermVec& children,
         auto btor_child_1 = sim_data_1[i];
         auto btor_child_2 = sim_data_2[i];
         auto btor_child_3 = sim_data_3[i];
-        
-        std::cout << "btor_child_1: " << btor_child_1.val << ", width: " << btor_child_1.width << std::endl;
-        std::cout << "btor_child_2: " << btor_child_2.val << ", width: " << btor_child_2.width << std::endl;
-        std::cout << "btor_child_3: " << btor_child_3.val << ", width: " << btor_child_3.width << std::endl;
 
         // Apply the operator
         btor_bv_operation_3children(op_type, btor_child_1, btor_child_2, btor_child_3, nd);
@@ -353,41 +374,49 @@ void process_children(Term current,
 
 
 //check two nodes are equal or not
-void compare_two_nodes(int num_iterations, 
-                       std::unordered_map<Term, NodeData> &node_data_map,
-                       std::unordered_map<Term, Term> &substitution_map,
-                       TermVec &terms,
-                       Term &current,
-                       SmtSolver solver) {
-    for(auto & t : terms) {
-        assert(node_data_map.find(t) != node_data_map.end());
+// void compare_two_nodes(int num_iterations, 
+//                        std::unordered_map<Term, NodeData> &node_data_map,
+//                        std::unordered_map<Term, Term> &substitution_map,
+//                        TermVec terms,
+//                        Term current,
+//                        SmtSolver solver) {
+    
+//     cout << "Comparing " << current->to_string() << " with other nodes:" << endl;
+//     for(auto & t : terms) {
+//         assert(node_data_map.find(t) != node_data_map.end());
         
-        if(t == current) {
-            continue;
-        }
+//         if(t == current) {
+//             cout << "Skipping self: " << t->to_string() << endl;
+//             continue;
+//         }
 
-        if(t->get_sort() != current->get_sort()) { // ensure the same sort
-            continue;
-        }
+//         if(t->get_sort() != current->get_sort()) { // ensure the same sort
+//             cout << "Skipping different sorts..." << endl;
+//             continue;
+//         }
 
-        bool all_equal = true;
-        for(size_t i = 0; i < num_iterations; i++) {
-            if((btor_bv_compare(&node_data_map[t].get_simulation_data()[i], &node_data_map[current].get_simulation_data()[i])) != 0) {
-                all_equal = false;
-                substitution_map.insert({current,current});
-                break;
-            }
-        }
+//         bool all_equal = true;
+//         for(size_t i = 0; i < num_iterations; i++) {
+//             if((btor_bv_compare(&node_data_map[t].get_simulation_data()[i], &node_data_map[current].get_simulation_data()[i])) != 0) {
+//                 all_equal = false;
+//                 cout << "Not equal at iteration " << i << ", current: " << current->to_string();
+//                 substitution_map.insert({current,current});
+//                 break;
+//             }
+//         }
 
-        if(all_equal) {
-            auto eq_term = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, current))}));
-            if(eq_term.is_unsat()) {
-                std::cout << "******substitution: " << current->to_string() << " -> " << t->to_string() << "*******" << std::endl;
-                substitution_map.insert({current, t});
-            }
-        }
-    }
-}
+//         if(all_equal) {
+//             auto eq_term = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, current))}));
+//             if(eq_term.is_unsat()) {
+//                 std::cout << "******substitution: " << current->to_string() << " -> " << t->to_string() << "*******" << std::endl;
+//                 substitution_map.insert({current, t});
+//             }
+//             else {
+//                 substitution_map.insert({current, current});
+//             }
+//         }
+//     }
+// }
 
 //update current node's data hash in hash_term_map
 void update_hash_term_map(Term current, 
@@ -408,10 +437,53 @@ void update_hash_term_map(Term current,
     std::cout << "current data hash: " << current_hash << std::endl;
     if (hash_term_map.find(current_hash) == hash_term_map.end()) {
         hash_term_map.insert({current_hash, {current}});
+        cout << "---------" <<hash_term_map.at(current_hash).at(0)->to_string() << endl;
         substitution_map.insert({current, current});
     } else {
+        cout << "current hash already exists in hash_term_map" << endl;
+        cout << "current:" << current->to_string() << endl;
         hash_term_map[current_hash].push_back(current);
-        compare_two_nodes(num_iterations, node_data_map, substitution_map, hash_term_map[current_hash], current, solver);
+        cout << "hash_term_map[current_hash]: " << hash_term_map[current_hash].size() << endl;
+        for(auto & t : hash_term_map[current_hash]) {
+            cout << "******hash_term_map[current_hash]: " << t->to_string() << endl;
+        }
+        // compare_two_nodes(num_iterations, node_data_map, substitution_map, hash_term_map[current_hash], current, solver);
+        for(auto & t : hash_term_map[current_hash]) {
+            assert(node_data_map.find(t) != node_data_map.end());
+            if(t == current) {
+                cout << "Skipping self: " << t->to_string()<< endl;
+                continue;
+            }
+            if(t->get_sort() != current->get_sort()) { // ensure the same sort
+                cout << "Skipping different sorts..." << endl;
+                continue;
+            }
+            if(t->get_sort() != current->get_sort()) { // ensure the same sort
+                cout << "skipping array node..." << endl;
+                continue;
+            }
+
+            bool all_equal = true;
+            for(size_t i = 0; i < num_iterations; i++) {
+                if((btor_bv_compare(&node_data_map[t].get_simulation_data()[i], &node_data_map[current].get_simulation_data()[i])) != 0) {
+                    all_equal = false;
+                    cout << "Not equal at iteration " << i << ", current: " << current->to_string();
+                    substitution_map.insert({current,current});
+                    break;
+                }
+            }
+
+            if(all_equal) {
+                auto eq_term = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, current))}));
+                if(eq_term.is_unsat()) {
+                    std::cout << "******substitution: " << current->to_string() << " -> " << t->to_string() << "*******" << std::endl;
+                    substitution_map.insert({current, t});
+                }
+                else {
+                    substitution_map.insert({current, current});
+                }
+            }
+        }
     }
 }
 
@@ -498,7 +570,6 @@ int main() {
         Term var = var_val_pair.first;
         Term val = var_val_pair.second;
         create_lut(val, all_luts[var]);
-        substitution_map.insert({var, var});
     }
 
     for (const auto & var_val_pair : sts2.init_constants()) {
@@ -507,7 +578,6 @@ int main() {
         Term var = var_val_pair.first;
         Term val = var_val_pair.second;
         create_lut(val, all_luts[var]);
-        substitution_map.insert({var, var});
     }
     //End of array init
 
