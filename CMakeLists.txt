@@ -2,23 +2,10 @@ cmake_minimum_required(VERSION 3.1)
 
 project(wasim)
 
-option(WASIM_STATIC_BUILD "Build static executables" OFF)
-message(STATUS "Static build: ${WASIM_STATIC_BUILD}")
-
 set(WASIM_MAJOR 0)   # Major component of WASIM version
 set(WASIM_MINOR 1)   # Minor component of WASIM version
 set(WASIM_RELEASE 1) # Release component of WASIM version
 
-if(WASIM_STATIC_BUILD)
-    set(WASIM_LIB_TYPE STATIC)
-    set(BUILD_SHARED_LIBS OFF)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-    set(Boost_USE_STATIC_LIBS ON)
-    set(GMP_PREFER_STATIC_LIBS TRUE)
-else()
-    set(WASIM_LIB_TYPE SHARED)
-    set(BUILD_SHARED_LIBS ON)
-endif()
 
 # handle different versions of CMake
 if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0 AND NOT APPLE)
@@ -157,23 +144,23 @@ set_target_properties(wasim-lib PROPERTIES OUTPUT_NAME wasim)
 
 target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
-target_link_libraries(wasim-lib PUBLIC 
-    "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a"
-    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a"
-    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a"
-    "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a"
-    "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a"
-    "/usr/local/lib/x86_64-linux-gnu/libgmpxx.a"
-    "/usr/local/lib/x86_64-linux-gnu/libgmp.a"
-    pthread
-    ${Boost_LIBRARIES}
-    gflags
-)
+target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
+target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
+target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
+target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
+target_link_libraries(wasim-lib PUBLIC pthread)
+target_link_libraries(wasim-lib PUBLIC Boost::system)
 
 find_library(UNWIND_LIB unwind)
 if(UNWIND_LIB)
     target_link_libraries(wasim-lib PUBLIC ${UNWIND_LIB})
 endif()
+
+find_package(gflags REQUIRED)
+target_link_libraries(wasim-lib PUBLIC gflags)
 
 # if (LIBRT)
 #   target_link_libraries(wasim-lib PUBLIC ${LIBRT})
@@ -303,14 +290,14 @@ endif()
 # add_executable(test_aes "apps/idpv/aes.cpp")
 # target_link_libraries(test_aes wasim-lib)
 
+add_executable(btor_preprocess "apps/idpv/btor_preprocess.cpp")
+target_link_libraries(btor_preprocess wasim-lib)
+
 add_executable(test_ast "apps/idpv/ast-test.cpp")
 target_link_libraries(test_ast wasim-lib)
 
 add_executable(test_btor "apps/idpv/btor_sweeping.cpp")
 target_link_libraries(test_btor wasim-lib)
-
-add_executable(test_btor_preprocess "apps/idpv/btor_preprocess.cpp")
-target_link_libraries(test_btor_preprocess wasim-lib)
 
 # add_executable(test_parallel "apps/idpv/parallel-ast.cpp")
 # target_link_libraries(test_parallel wasim-lib)
