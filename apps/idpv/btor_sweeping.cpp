@@ -85,12 +85,19 @@ void create_lut(Term current, std::unordered_map<std::string, std::string>& lut)
         auto index = children[1];   // stored position
         auto value = children[2];   // sotred value
 
-        // std::cout<< "stored position:" <<std::endl;
-        // std::cout<< "stored position" << index->to_string().c_str() << std::endl;
-        // std::cout<< "stored value" << value->to_string().c_str() << std::endl;
+        // 先获取index和value的字符串表示,避免重复调用to_string()
+        std::string index_str = index->to_string();
+        std::string value_str = value->to_string();
         
-        lut[index->to_string().substr(2)] = value->to_string().substr(2);
-
+        // 检查并去除"#b"前缀
+        if (index_str.substr(0,2) == "#b") {
+            index_str = index_str.substr(2);
+        }
+        if (value_str.substr(0,2) == "#b") {
+            value_str = value_str.substr(2);
+        }
+        
+        lut[index_str] = value_str;
         current = children[0]; // next iteration
     }
 }
@@ -419,12 +426,14 @@ void process_children(Term current,
 // }
 
 //update current node's data hash in hash_term_map
-void update_hash_term_map(Term current, 
-                          std::unordered_map<uint32_t, smt::TermVec>& hash_term_map,
-                          std::unordered_map<Term, NodeData>& node_data_map,
-                          std::unordered_map<Term, Term>& substitution_map,
-                          size_t num_iterations,
-                          SmtSolver solver) {
+void update_hash_term_map(Term current,
+                           std::unordered_map<uint32_t, smt::TermVec>& hash_term_map,
+                           std::unordered_map<Term, NodeData>& node_data_map,
+                           std::unordered_map<Term, Term>& substitution_map,
+                           size_t num_iterations,
+                           SmtSolver solver,
+                           TransitionSystem& sts1,
+                           TransitionSystem& sts2) {
    
     for(size_t i = 0; i < num_iterations; i++){
         auto & data = node_data_map[current].get_simulation_data()[i];
@@ -440,17 +449,34 @@ void update_hash_term_map(Term current,
         cout << "---------" <<hash_term_map.at(current_hash).at(0)->to_string() << endl;
         substitution_map.insert({current, current});
     } else {
+        string tmp;
+        Term current_term;
+        Term t1;
+        Term t2;
         cout << "current hash already exists in hash_term_map" << endl;
         cout << "current:" << current->to_string() << endl;
         hash_term_map[current_hash].push_back(current);
         cout << "hash_term_map[current_hash]: " << hash_term_map[current_hash].size() << endl;
         for(auto & t : hash_term_map[current_hash]) {
+            // cout << "******hash_term_map[current_hash]: " << t->to_string() << endl;
+            //copy the string value to tmp
+            tmp = t->to_string();
             cout << "******hash_term_map[current_hash]: " << t->to_string() << endl;
+        }
+        t1 = hash_term_map[current_hash].at(0);
+        t2 = hash_term_map[current_hash].at(1);
+        // copy the hash_term_map as deep copy
+        std::unordered_map<uint32_t, smt::TermVec> hash_term_map_copy;
+        for(auto & t : hash_term_map) {
+            // copy the hash and term vector
+            hash_term_map_copy.insert({t.first, t.second});
         }
         // compare_two_nodes(num_iterations, node_data_map, substitution_map, hash_term_map[current_hash], current, solver);
         for(auto & t : hash_term_map[current_hash]) {
+            cout<< "t: " << t->to_string() << endl;
             assert(node_data_map.find(t) != node_data_map.end());
-            if(t == current) {
+            if(t->compare(current)) {
+                cout << "Skipping self: " << tmp << endl;
                 cout << "Skipping self: " << t->to_string()<< endl;
                 continue;
             }
@@ -464,7 +490,10 @@ void update_hash_term_map(Term current,
             }
 
             bool all_equal = true;
+            cout << "t1: " << t1->to_string() << endl;
+            cout << "t2: " << t2->to_string() << endl;
             for(size_t i = 0; i < num_iterations; i++) {
+                
                 if((btor_bv_compare(&node_data_map[t].get_simulation_data()[i], &node_data_map[current].get_simulation_data()[i])) != 0) {
                     all_equal = false;
                     cout << "Not equal at iteration " << i << ", current: " << current->to_string();
@@ -472,8 +501,16 @@ void update_hash_term_map(Term current,
                     break;
                 }
             }
+            cout << "t1: " << t1->to_string() << endl;
+            cout << "t2: " << t2->to_string() << endl;
 
             if(all_equal) {
+                cout << "All equal here..." << endl;
+                solver->push();
+                solver->assert_formula(sts1.init());
+                solver->assert_formula(sts2.init());
+                for (const auto & c : sts1.constraints()) solver->assert_formula(c.first);
+                for (const auto & c : sts2.constraints()) solver->assert_formula(c.first);
                 auto eq_term = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, current))}));
                 if(eq_term.is_unsat()) {
                     std::cout << "******substitution: " << current->to_string() << " -> " << t->to_string() << "*******" << std::endl;
@@ -482,6 +519,16 @@ void update_hash_term_map(Term current,
                 else {
                     substitution_map.insert({current, current});
                 }
+                solver->pop();
+            }
+            cout << "t1: " << t1->to_string() << endl;
+            cout << "t2: " << t2->to_string() << endl;
+            // print the hash_term_map
+            for(auto & t : hash_term_map_copy[current_hash]) {
+                cout << "hash_term_map_copy: " << t->to_string() << endl;
+                // for(auto & t1 : t.second) {
+                //     cout << "hash_term_map_copy: " << t1->to_string() << endl;
+                // }
             }
         }
     }
@@ -666,7 +713,7 @@ int main() {
                 // substitution_map.insert({current, current}); 
 
                 //update hash_term_map
-                update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver);
+                update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver, sts1, sts2);
             }
             else if(current->is_symbolic_const() && current->get_op().is_null()) { // leaf nodes
                 std::cout << "leaf nodes: " << current->to_string() << std::endl;
@@ -679,8 +726,8 @@ int main() {
                 //leaf nodes don't need substitution
                 // substitution_map.insert({current, current}); 
 
-                //update hash_term_map 
-                update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver);
+                //update hash_term_map
+                update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver, sts1, sts2);
             }
             else { // compute simulation data for current node
                 std::cout << "Computing : " << current->to_string() << std::endl;
@@ -699,15 +746,20 @@ int main() {
                 
                 if(substitution_happened) {
                     std::cout << "***********Substitution happened***********" << std::endl;
+                    //print the root_children[0] and root_children[1]
+                    std::cout << "root_children[0]: " << children[0]->to_string() << std::endl;
+                    std::cout << "root_children[1]: " << children[1]->to_string() << std::endl;
                     Term new_node = solver->make_term(op_type, children);
+                    std::cout << "new_node: " << new_node->to_string() << std::endl;
+                    std::cout << "current: " << current->to_string() << std::endl;
                     NodeData new_nd = node_data_map[current];
                     node_data_map.insert({new_node, new_nd});
 
                     //update hash_term_map
-                    update_hash_term_map(new_node, hash_term_map, node_data_map, substitution_map, num_iterations, solver);
+                    update_hash_term_map(new_node, hash_term_map, node_data_map, substitution_map, num_iterations, solver, sts1, sts2);
                 } else {
                     std::cout << "No substitution..." << std::endl;
-                    update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver);
+                    update_hash_term_map(current, hash_term_map, node_data_map, substitution_map, num_iterations, solver, sts1, sts2);
                 }    
             }
         
