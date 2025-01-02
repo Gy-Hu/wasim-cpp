@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.10)
 
 project(wasim)
 
@@ -71,7 +71,12 @@ set(SMT_SWITCH_DIR "${PROJECT_SOURCE_DIR}/deps/smt-switch")
 # rely on cmake modules from smt-switch (required anyway)
 set(CMAKE_MODULE_PATH ${SMT_SWITCH_DIR}/cmake)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+
 find_package(GMP REQUIRED)
+if(GMP_FOUND)
+    include_directories(${GMP_INCLUDE_DIRS})
+endif()
 
 # Check that dependencies are there
 if (NOT EXISTS "${SMT_SWITCH_DIR}/local/include/smt-switch/smt.h")
