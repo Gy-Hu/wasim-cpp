@@ -5,4 +5,4 @@ memory -nomap
 hierarchy -check
 setundef -undriven -init -expose
 sim -w alu_miter
-write_btor -s cond_mul.btor2
+write_btor -s cond_mul_128.btor2

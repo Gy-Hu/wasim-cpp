@@ -293,11 +293,23 @@ target_link_libraries(test_aes wasim-lib)
 # add_executable(test_ast "apps/idpv/ast-test.cpp")
 # target_link_libraries(test_ast wasim-lib)
 
-# add_executable(test_btor "apps/idpv/btor_sweeping.cpp")
-# target_link_libraries(test_btor wasim-lib)
+add_executable(test_case1 "apps/idpv/case1/btor_sweeping.cpp")
+target_link_libraries(test_case1 wasim-lib)
 
-add_executable(test_naive "apps/idpv/case2/naive.cpp")
-target_link_libraries(test_naive wasim-lib)
+add_executable(test_case2 "apps/idpv/case2/naive.cpp")
+target_link_libraries(test_case2 wasim-lib)
+
+# add_executable(test_case2 "apps/idpv/case2/btor_sweeping_mul.cpp")
+# target_link_libraries(test_case2 wasim-lib)
+
+add_executable(test_case3 "apps/idpv/case3/aes.cpp")
+target_link_libraries(test_case3 wasim-lib)
+
+add_executable(test_case4 "apps/idpv/case4/btor_sweeping.cpp")
+target_link_libraries(test_case4 wasim-lib)
+
+# add_executable(test_case4 "apps/idpv/case4/aes.cpp")
+# target_link_libraries(test_case4 wasim-lib)
 
 # add_executable(test_parallel "apps/idpv/parallel-ast.cpp")
 # target_link_libraries(test_parallel wasim-lib)

@@ -1,0 +1,9 @@
+read_verilog -formal AES.v
+prep -top AES
+flatten
+memory -nomap
+uniquify
+hierarchy -check
+setundef -undriven -init -expose
+sim -w AES
+write_btor -s AES_Verilog_one_round.btor2

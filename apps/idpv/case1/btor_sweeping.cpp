@@ -350,14 +350,14 @@ int main() {
 
     // cout << "Loading and parsing BTOR2 files...\n";
     TransitionSystem sts1(solver);
-    BTOR2Encoder btor_parser1("../design/idpv-test/aes_case/AES_TOP.btor2", sts1, "a::");
+    BTOR2Encoder btor_parser1("../design/smt-sweeping/case1/AES_TOP.btor2", sts1, "a::");
 
     auto a_key_term = sts1.lookup("a::key");
     auto a_input_term = sts1.lookup("a::datain");
     auto a_output_term = sts1.lookup("a::finalout");
 
     TransitionSystem sts2(solver);
-    BTOR2Encoder btor_parser2("../design/idpv-test/aes_case/AES_Verilog.btor2", sts2, "b::");
+    BTOR2Encoder btor_parser2("../design/smt-sweeping/case1/AES_Verilog.btor2", sts2, "b::");
 
     auto b_key_term = sts2.lookup("b::key");
     auto b_input_term = sts2.lookup("b::in");
@@ -430,7 +430,7 @@ int main() {
                 continue;
             // if equal
             const auto & array_var_j = pos_j->first;
-            std::cout << "[sub array] " << array_var_i ->to_string() << " --> " << array_var_j->to_string() << std::endl;
+            // std::cout << "[sub array] " << array_var_i ->to_string() << " --> " << array_var_j->to_string() << std::endl;
             substitution_map.insert({array_var_i, array_var_j});
             another_array_found = true;
             // if you find one then it is okay, no need to find the rest
@@ -439,7 +439,7 @@ int main() {
             // 0 , 1, 2   . then 2-->0  1-->0
         }
         if (!another_array_found) {
-            std::cout << "[array not sub] " << array_var_i ->to_string() << std::endl;
+            // std::cout << "[array not sub] " << array_var_i ->to_string() << std::endl;
             substitution_map.insert({array_var_i, array_var_i});
         }
     }
@@ -457,7 +457,7 @@ int main() {
 
     //simulation
     GmpRandStateGuard rand_guard;
-    int num_iterations = 40;
+    int num_iterations = 20;
 
     for (int i = 0; i < num_iterations; ++i) {
         mpz_t key_mpz, input_mpz;
@@ -521,7 +521,7 @@ int main() {
     cout << "End simulation, Start post order traversal" << endl;
 
     while(!node_stack.empty()) {
-        std::cout << "."; std::cout.flush();
+        // std::cout << "."; std::cout.flush();
         auto & [current,visited] = node_stack.top();
         if(substitution_map.find(current) != substitution_map.end()) {
             node_stack.pop();
@@ -628,7 +628,7 @@ int main() {
                             terms_for_solving.push_back(t);
                     } // end of filtering terms in terms_to_check --> terms_for_solving
                     if (term_eq == nullptr) { // if no structural same term found
-                       std::cout << "c"  << terms_for_solving.size();
+                    //    std::cout << "c"  << terms_for_solving.size();
                        std::cout.flush();
                        for (const auto & t : terms_for_solving) {
                           auto result = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, cnode))}));
@@ -645,7 +645,7 @@ int main() {
 
                 if (term_eq) {
                     substitution_map.emplace(current, term_eq);
-                    std::cout << "s"; std::cout.flush();
+                    // std::cout << "s"; std::cout.flush();
                 } else {
                     substitution_map.emplace(current, cnode);
                     hash_term_map[current_hash].push_back(cnode);

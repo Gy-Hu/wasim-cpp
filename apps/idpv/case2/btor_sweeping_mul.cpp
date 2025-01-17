@@ -119,6 +119,10 @@ void btor_bv_operation_1child(const smt::Op& op,
         auto current_val = btor_bv_not(&btor_child_1);
         nd.get_simulation_data().push_back(*current_val);
     }
+    if(op.prim_op == PrimOp::BVNot) {
+        auto current_val = btor_bv_not(&btor_child_1);
+        nd.get_simulation_data().push_back(*current_val);
+    }
     else if(op.prim_op == PrimOp::Extract) {
         auto high = op.idx0;
         auto low = op.idx1;
@@ -366,7 +370,7 @@ class GmpRandStateGuard
 };
 
 void initialize_arrays(TransitionSystem& sts1,
-                       TransitionSystem& sts2,
+                    //    TransitionSystem& sts2,
                        std::unordered_map<Term, std::unordered_map<std::string, std::string>>& all_luts,
                        std::unordered_map<Term, Term>& substitution_map
 ) {
@@ -380,15 +384,15 @@ void initialize_arrays(TransitionSystem& sts1,
         std::cout << "[array create] " << var->to_string() << " of size " << all_luts[var].size() << std::endl;
     }
 
-    for (const auto & var_val_pair : sts2.init_constants()) {
-        if(var_val_pair.first->get_sort()->get_sort_kind() != ARRAY)
-            continue;
-        Term var = var_val_pair.first;
-        Term val = var_val_pair.second;
-        assert(all_luts.find(var) == all_luts.end());
-        create_lut(val, all_luts[var]);
-        std::cout << "[array create] " << var->to_string() << " of size " << all_luts[var].size() << std::endl;
-    }
+    // for (const auto & var_val_pair : sts2.init_constants()) {
+    //     if(var_val_pair.first->get_sort()->get_sort_kind() != ARRAY)
+    //         continue;
+    //     Term var = var_val_pair.first;
+    //     Term val = var_val_pair.second;
+    //     assert(all_luts.find(var) == all_luts.end());
+    //     create_lut(val, all_luts[var]);
+    //     std::cout << "[array create] " << var->to_string() << " of size " << all_luts[var].size() << std::endl;
+    // }
 
     // Array comparison
     for (auto pos = all_luts.begin(); pos != all_luts.end(); ++ pos) {
@@ -418,7 +422,7 @@ void initialize_arrays(TransitionSystem& sts1,
                 continue;
             // if equal
             const auto & array_var_j = pos_j->first;
-            std::cout << "[sub array] " << array_var_i ->to_string() << " --> " << array_var_j->to_string() << std::endl;
+            // std::cout << "[sub array] " << array_var_i ->to_string() << " --> " << array_var_j->to_string() << std::endl;
             substitution_map.insert({array_var_i, array_var_j});
             another_array_found = true;
             // if you find one then it is okay, no need to find the rest
@@ -427,7 +431,7 @@ void initialize_arrays(TransitionSystem& sts1,
             // 0 , 1, 2   . then 2-->0  1-->0
         }
         if (!another_array_found) {
-            std::cout << "[array not sub] " << array_var_i ->to_string() << std::endl;
+            // std::cout << "[array not sub] " << array_var_i ->to_string() << std::endl;
             substitution_map.insert({array_var_i, array_var_i});
         }
     }
@@ -438,7 +442,7 @@ int main() {
     auto program_start_time = std::chrono::high_resolution_clock::now();
     last_time_point = program_start_time;
 
-    SmtSolver solver = BoolectorSolverFactory::create(true);
+    SmtSolver solver = BoolectorSolverFactory::create(false);
 
     solver->set_logic("QF_UFBV");
     solver->set_opt("incremental", "true");
@@ -447,22 +451,22 @@ int main() {
 
     // cout << "Loading and parsing BTOR2 files...\n";
     TransitionSystem sts1(solver);
-    BTOR2Encoder btor_parser1("../design/smt-sweeping/case2/mul_64.btor2", sts1, "a::");
+    BTOR2Encoder btor_parser1("../design/smt-sweeping/case2/cond_mul.btor2", sts1, "a::");
 
     auto a_key_term = sts1.lookup("a::a");
     auto a_input_term = sts1.lookup("a::b");
     auto a_ctr_term = sts1.lookup("a::control");
-    auto a_output_term = sts1.lookup("a::out");
 
-    TransitionSystem sts2(solver);
-    BTOR2Encoder btor_parser2("../design/smt-sweeping/case2/mul_64_golden.btor2", sts2, "b::");
-
-    auto b_key_term = sts2.lookup("b::a64");
-    auto b_input_term = sts2.lookup("b::b64");
-    auto b_output_term = sts2.lookup("b::out128");
+    auto b_key_term = sts1.lookup("a::a");
+    auto b_input_term = sts1.lookup("a::b");
 
     print_time();
     std::cout << "init solver" << std::endl;
+
+    std::string aa = "1000";
+    Sort bv_sort = solver->make_sort(BV, 4);
+    auto a_ctl_val = solver->make_term(aa, bv_sort, 2);  // 2nd prarater - bit-width，3rd- binary
+    auto control_equals_1000 = solver->make_term(Equal, a_ctr_term, a_ctl_val);
 
     int count = 0;
     int unsat_count = 0;
@@ -472,7 +476,7 @@ int main() {
         throw std::runtime_error("Required terms not found in models");
     }
 
-    auto root = solver->make_term(Equal, a_output_term, b_output_term);
+    auto root =  sts1.lookup("a::result");;
 
     std::unordered_map<Term, NodeData> node_data_map; // term -> sim_data
     std::unordered_map<uint32_t, TermVec> hash_term_map; // hash -> TermVec
@@ -480,7 +484,7 @@ int main() {
     std::unordered_map<Term, std::unordered_map<std::string, std::string>> all_luts; // state -> lookup table
 
     //Array init
-    initialize_arrays(sts1, sts2, all_luts, substitution_map);
+    initialize_arrays(sts1, all_luts, substitution_map);
     //End of array init
 
     //print all luts
@@ -493,7 +497,7 @@ int main() {
 
     //simulation
     GmpRandStateGuard rand_guard;
-    int num_iterations = 40;
+    int num_iterations = 1;
 
     for (int i = 0; i < num_iterations; ++i) {
         mpz_t key_mpz, input_mpz;
@@ -563,7 +567,7 @@ int main() {
     cout << "End simulation, Start post order traversal" << endl;
 
     while(!node_stack.empty()) {
-        std::cout << "."; std::cout.flush();
+        // std::cout << "."; std::cout.flush();
         auto & [current,visited] = node_stack.top();
         if(substitution_map.find(current) != substitution_map.end()) {
             node_stack.pop();
@@ -670,7 +674,7 @@ int main() {
                             terms_for_solving.push_back(t);
                     } // end of filtering terms in terms_to_check --> terms_for_solving
                     if (term_eq == nullptr) { // if no structural same term found
-                       std::cout << "c"  << terms_for_solving.size();
+                    //    std::cout << "c"  << terms_for_solving.size();
                        std::cout.flush();
                        for (const auto & t : terms_for_solving) {
                           auto result = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, cnode))}));
@@ -687,7 +691,7 @@ int main() {
 
                 if (term_eq) {
                     substitution_map.emplace(current, term_eq);
-                    std::cout << "s"; std::cout.flush();
+                    // std::cout << "s"; std::cout.flush();
                 } else {
                     substitution_map.emplace(current, cnode);
                     hash_term_map[current_hash].push_back(cnode);
@@ -708,7 +712,10 @@ int main() {
     print_time();
     std::cout << "Start checking sat" << std::endl;
 
-    solver->assert_formula(solver->make_term(Not, root));
+    auto not_result = solver->make_term(Not, root);
+    auto implication = solver->make_term(Implies, control_equals_1000, not_result);
+    auto neg_property = solver->make_term(Not, implication);
+    solver->assert_formula(neg_property);
     auto res = solver->check_sat();
     print_time();
     if(res.is_unsat()){

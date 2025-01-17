@@ -1,0 +1,6 @@
+source -s abc.rc
+&r aes_miter.aig 
+&fraig -h
+&fraig -vy
+&cec
+exit
