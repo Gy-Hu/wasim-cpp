@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <random>
 
-#include "btor_sweeping.h"  // Remove this line if your project doesn't need it.
+#include "btor_sweeping.h" 
 #include "smt-switch/utils.h"
 
 using namespace smt;
@@ -46,7 +46,6 @@ int main() {
 
     // 2) Read BTOR2 file and build Transition System
     TransitionSystem sts1(solver);
-    // Change this to your actual BTOR2 file path
     BTOR2Encoder btor_parser1("../design/smt-sweeping/case2/cond_mul.btor2", sts1, "a::");
 
     // 3) Get control bit a::control and output decision bit a::result
@@ -71,7 +70,7 @@ int main() {
     //    If the result is UNSAT, it means no counterexample exists and the property holds
     auto neg_property = solver->make_term(Not, implication);
     solver->assert_formula(neg_property);
-
+    solver->dump_smt2("case2_naive.smt2");
     // 7) Solve and output results
     auto res = solver->check_sat();
     if (res.is_unsat()) {

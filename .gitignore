@@ -43,3 +43,4 @@ output/
 .metals/
 .bsp/
 .scala-build/
+*aider*
