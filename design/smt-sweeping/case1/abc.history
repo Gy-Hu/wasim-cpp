@@ -1,0 +1,19 @@
+source -s abc.rc
+&fraig -y 
+&fraig
+&fraig -v
+fraig -v
+fraig -h
+&read_aiger
+&fraig  -F a.txt -y ars_miter.aig
+cec -h
+abc -h
+&fraig -h
+&fraig -vy
+&fraig -F output.txt
+&fraig -vy aes_miter.aig
+source -s abc.rc
+read_aiger aes_miter.aig
+&get
+&fraig -y
+&cec

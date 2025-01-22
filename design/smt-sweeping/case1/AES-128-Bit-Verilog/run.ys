@@ -1,0 +1,9 @@
+read_verilog -formal aescipher.v
+prep -top aescipher
+flatten
+memory -nomap
+uniquify
+hierarchy -check
+setundef -undriven -init -expose
+sim -clock clk -w aescipher
+write_btor -s aescipher_one_cycle.btor2

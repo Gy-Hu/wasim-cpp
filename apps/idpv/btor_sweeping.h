@@ -247,7 +247,6 @@ uint32_t btor_bv_get_bit (const BtorBitVector *bv, uint32_t pos)
 
   i = pos / BTOR_BV_TYPE_BW;
   j = pos % BTOR_BV_TYPE_BW;
-
   return (bv->bits[bv->len - 1 - i] >> j) & 1;
 #endif
 }
@@ -682,11 +681,7 @@ BtorBitVector *btor_bv_uext (const BtorBitVector *bv, uint32_t len)
   return res;
 }
 
-BtorBitVector *btor_bv_slice (
-               const BtorBitVector *bv,
-               uint32_t upper,
-               uint32_t lower)
-{
+BtorBitVector *btor_bv_slice (const BtorBitVector *bv, uint32_t upper, uint32_t lower) {
   assert (bv);
 
   BtorBitVector *res;
@@ -820,6 +815,202 @@ BtorBitVector *btor_bv_eq (const BtorBitVector *a, const BtorBitVector *b)
   btor_bv_set_bit (res, 0, bit);
 
   assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+BtorBitVector *btor_bv_xor (const BtorBitVector *a, const BtorBitVector *b) {
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+  uint32_t bw = a->width;
+#ifdef BTOR_USE_GMP
+  res = btor_bv_new (bw);
+  mpz_xor (res->val, a->val, b->val);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  assert (a->len == b->len);
+  uint32_t i;
+
+  res = btor_bv_new (bw);
+  for (i = 0; i < a->len; i++) res->bits[i] = a->bits[i] ^ b->bits[i];
+
+  assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+BtorBitVector *btor_bv_mul (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+  uint32_t bw = a->width;
+#ifdef BTOR_USE_GMP
+  res = btor_bv_new (bw);
+  mpz_mul (res->val, a->val, b->val);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  assert (a->len == b->len);
+  uint32_t i;
+  uint64_t x, y;
+  BtorBitVector *and, *shift, *add;
+
+  if (bw <= 64)
+  {
+    x   = btor_bv_to_uint64 (a);
+    y   = btor_bv_to_uint64 (b);
+    res = btor_bv_uint64_to_bv (x * y, bw);
+  }
+  else
+  {
+    res = btor_bv_new (bw);
+    for (i = 0; i < bw; i++)
+    {
+      if (btor_bv_get_bit (b, i))
+        and = btor_bv_copy (a);
+      else
+        and = btor_bv_new (bw);
+      shift = btor_bv_sll_uint64 (and, i);
+      add   = btor_bv_add (res, shift);
+      btor_bv_free (and);
+      btor_bv_free (shift);
+      btor_bv_free (res);
+      res = add;
+    }
+  }
+#endif
+  return res;
+}
+
+BtorBitVector *btor_bv_int64_to_bv (int64_t value, uint32_t bw) {
+  assert (bw > 0);
+
+  BtorBitVector *res;
+
+#ifdef BTOR_USE_GMP
+  BTOR_NEW (res);
+  res->width = bw;
+  mpz_init_set_si (res->val, value);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  BtorBitVector *tmp;
+  res = btor_bv_new (bw);
+  assert (res->len > 0);
+
+  /* ensure that all bits > 64 are set to 1 in case of negative values */
+  if (value < 0 && bw > 64)
+  {
+    tmp = btor_bv_not (res);
+    btor_bv_free (res);
+    res = tmp;
+  }
+
+  res->bits[res->len - 1] = (BTOR_BV_TYPE) value;
+  if (res->width > 32)
+    res->bits[res->len - 2] = (BTOR_BV_TYPE) (value >> BTOR_BV_TYPE_BW);
+
+  set_rem_bits_to_zero (res);
+  assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+
+BtorBitVector *btor_bv_ne (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+#ifdef BTOR_USE_GMP
+  res = mpz_cmp (a->val, b->val) != 0 ? btor_bv_one (1)
+                                      : btor_bv_zero (1);
+#else
+  assert (a->len == b->len);
+  uint32_t i, bit;
+
+  res = btor_bv_new (1);
+  bit = 1;
+  for (i = 0; i < a->len; i++)
+  {
+    if (a->bits[i] != b->bits[i])
+    {
+      bit = 0;
+      break;
+    }
+  }
+  btor_bv_set_bit (res, 0, !bit);
+
+  assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+BtorBitVector *
+btor_bv_ones (uint32_t bw)
+{
+  assert (bw);
+
+  BtorBitVector *res;
+#ifdef BTOR_USE_GMP
+  res = btor_bv_one (bw);
+  mpz_mul_2exp (res->val, res->val, bw);
+  mpz_sub_ui (res->val, res->val, 1);
+#else
+  BtorBitVector *tmp;
+  tmp = btor_bv_new (bw);
+  res = btor_bv_not (tmp);
+  btor_bv_free (tmp);
+#endif
+  return res;
+}
+
+BtorBitVector *btor_bv_udiv (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+#ifdef BTOR_USE_GMP
+  uint32_t bw = a->width;
+  if (btor_bv_is_zero (b)) return btor_bv_ones (bw);
+  res = btor_bv_new (bw);
+  mpz_fdiv_q (res->val, a->val, b->val);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  assert (a->len == b->len);
+  udiv_urem_bv (a, b, &res, 0);
+  assert (res);
+#endif
+  return res;
+}
+
+BtorBitVector *btor_bv_sub (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+#ifdef BTOR_USE_GMP
+  uint32_t bw = a->width;
+  res         = btor_bv_new (bw);
+  mpz_sub (res->val, a->val, b->val);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  assert (a->len == b->len);
+  BtorBitVector *negb;
+
+  negb = btor_bv_neg (b);
+  res  = btor_bv_add (a, negb);
+  btor_bv_free (negb);
 #endif
   return res;
 }

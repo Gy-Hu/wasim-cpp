@@ -1,0 +1,8 @@
+read_verilog -formal aes_miter.v
+prep -top aes_miter
+flatten
+memory -nordff
+setundef -undriven -init -expose
+techmap
+abc -fast -g AND
+write_aiger aes_miter.aig

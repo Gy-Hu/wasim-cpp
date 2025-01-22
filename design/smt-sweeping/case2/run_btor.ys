@@ -1,0 +1,8 @@
+read_verilog -formal cond_mul.v
+prep -top alu_miter
+flatten
+memory -nomap
+hierarchy -check
+setundef -undriven -init -expose
+sim -w alu_miter
+write_btor -s cond_mul_64.btor2
