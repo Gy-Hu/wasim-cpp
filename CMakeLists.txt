@@ -116,7 +116,7 @@ set(INCLUDE_DIRS
   "${SMT_SWITCH_DIR}/local/include"
   "${CMAKE_CURRENT_BINARY_DIR}"
   "${GMP_INCLUDE_DIR}"
-  "${FLEX_INCLUDE_DIRS}"
+  # "${FLEX_INCLUDE_DIRS}"
   "${Boost_INCLUDE_DIRS}"
   )
 
