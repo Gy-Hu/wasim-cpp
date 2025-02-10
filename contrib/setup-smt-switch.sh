@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 DEPS=$DIR/../deps
 
-SMT_SWITCH_VERSION=b812cc4bddddde33d2fd05f4044f4fcfb8d648d8
+SMT_SWITCH_VERSION=6b564d3fd4b6ccbc533d7bb5252277e330a2773e
 
 usage () {
     cat <<EOF
@@ -47,7 +47,7 @@ mkdir -p $DEPS
 
 if [ ! -d "$DEPS/smt-switch" ]; then
     cd $DEPS
-    git clone https://github.com/zhanghongce/smt-switch.git
+    git clone https://github.com/Gy-Hu/smt-switch.git
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
     ./contrib/setup-btor.sh
