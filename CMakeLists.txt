@@ -56,11 +56,24 @@ find_library(LIBRT rt)
 message("-- FOUND FLEX EXECUTABLE: ${FLEX_EXECUTABLE}")
 message("-- FOUND FLEX INCLUDE DIRS: ${FLEX_INCLUDE_DIRS}")
 
+# check the local boost
+set(BOOST_ROOT "${PROJECT_SOURCE_DIR}/deps/boost/install")
+if(NOT EXISTS "${BOOST_ROOT}")
+    message(FATAL_ERROR "Missing Boost -- try running ./contrib/setup-boost.sh")
+endif()
 
-find_package(Boost REQUIRED COMPONENTS system filesystem)
-MESSAGE( STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}.")
-MESSAGE( STATUS "Boost_LIBRARY_DIRS = ${Boost_LIBRARY_DIRS}.")
-MESSAGE( STATUS "Boost_LIBRARIES = ${Boost_LIBRARIES}.")
+set(Boost_NO_SYSTEM_PATHS ON)
+set(Boost_USE_STATIC_LIBS ON)
+find_package(Boost REQUIRED COMPONENTS system filesystem program_options thread)
+
+if(NOT Boost_FOUND)
+    message(FATAL_ERROR "Could not find Boost in ${BOOST_ROOT}")
+endif()
+
+message(STATUS "Found Boost version: ${Boost_VERSION}")
+message(STATUS "Using Boost from: ${BOOST_ROOT}")
+message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
+message(STATUS "Boost_LIBRARIES = ${Boost_LIBRARIES}")
 
 # TODO: Use find_package
 # find package
@@ -153,6 +166,12 @@ target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC pthread)
 target_link_libraries(wasim-lib PUBLIC Boost::system)
+target_link_libraries(wasim-lib PUBLIC 
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
+    ${Boost_THREAD_LIBRARY}
+)
 
 find_library(UNWIND_LIB unwind)
 if(UNWIND_LIB)
