@@ -12,10 +12,23 @@ function(set_static_linking target)
     set_target_properties(${target} PROPERTIES LINK_SEARCH_START_STATIC ON)
     set_target_properties(${target} PROPERTIES LINK_SEARCH_END_STATIC ON)
     target_link_options(${target} PRIVATE -static)
+    
+    # Link pthread first
+    target_link_libraries(${target} PUBLIC -Wl,--whole-archive -lpthread -Wl,--no-whole-archive)
+    
+    # Add liblzma before libunwind to resolve dependencies
+    target_link_libraries(${target} PUBLIC -Wl,--whole-archive /usr/lib/x86_64-linux-gnu/liblzma.a -Wl,--no-whole-archive)
+    
+    # Link libunwind with specific options to avoid conflicts
+    target_link_libraries(${target} PUBLIC -Wl,--exclude-libs,libgcc_eh.a -Wl,--whole-archive /usr/lib/x86_64-linux-gnu/libunwind.a -Wl,--no-whole-archive)
+    
+    # Link other required libraries
     target_link_libraries(${target} PUBLIC -static-libgcc -static-libstdc++)
     target_link_libraries(${target} PUBLIC -Wl,--whole-archive /usr/lib/x86_64-linux-gnu/libgflags.a -Wl,--no-whole-archive)
     target_link_libraries(${target} PUBLIC -Wl,--whole-archive /usr/lib/x86_64-linux-gnu/libgmp.a -Wl,--no-whole-archive)
-    target_link_libraries(${target} PUBLIC -Wl,--start-group -lpthread -ldl -lrt -Wl,--end-group)
+    
+    # Group remaining system libraries
+    target_link_libraries(${target} PUBLIC -Wl,--start-group -ldl -lrt -Wl,--end-group)
 endfunction()
 
 set(WASIM_MAJOR 0)   # Major component of WASIM version
