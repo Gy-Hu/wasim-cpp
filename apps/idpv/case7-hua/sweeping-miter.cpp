@@ -1,3 +1,4 @@
+
 #include "assert.h"
 #include "config/testpath.h"
 #include "framework/symsim.h"
@@ -542,11 +543,67 @@ void post_order(smt::Term& root,
     std::stack<std::pair<Term,bool>> node_stack;
     node_stack.push({root,false});
 
-    // print_time();
-    // cout << "End simulation, Start post order traversal" << endl;
+    // Variables for progress tracking
+    int total_nodes = 0;
+    int processed_nodes = 0;
+    enum SweepingStep { NONE, SUBST_CHECK, NEW_NODE, SIM_COMP, EQUIV_SEARCH, MAP_UPDATE };
+    SweepingStep current_step = NONE;
+    std::string step_names[] = {
+        "IDLE",
+        "SUBST CHECK",
+        "NEW NODE",
+        "SIM COMP",
+        "EQUIV SEARCH",
+        "MAP UPDATE"
+    };
+
+    // First pass to count total nodes (optional but gives more accurate progress)
+    {
+        std::stack<Term> count_stack;
+        std::unordered_set<Term> visited;
+        count_stack.push(root);
+        
+        while (!count_stack.empty()) {
+            Term current = count_stack.top();
+            count_stack.pop();
+            
+            if (visited.find(current) != visited.end())
+                continue;
+                
+            visited.insert(current);
+            total_nodes++;
+            
+            for (Term child : current) {
+                if (child->get_sort()->get_sort_kind() == BV || child->get_sort()->get_sort_kind() == BOOL) {
+                    count_stack.push(child);
+                }
+            }
+        }
+    }
+    
+    std::cout << "Begin sweeping with " << total_nodes << " nodes..." << std::endl;
+    // std::cout << "============================" << std::endl;
+
+    // Function to update and display progress
+    auto update_progress = [&](SweepingStep step) {
+        current_step = step;
+        const int bar_width = 50;
+        float progress = (float)processed_nodes / total_nodes;
+        
+        std::cout << "\r[";
+        int pos = bar_width * progress;
+        for (int i = 0; i < bar_width; ++i) {
+            if (i < pos) std::cout << "=";
+            else if (i == pos) std::cout << ">";
+            else std::cout << " ";
+        }
+        std::cout << "] " << int(progress * 100.0) << "% | "
+                  << "Step: " << step_names[step] << " | "
+                  << processed_nodes << "/" << total_nodes << " nodes"
+                  << std::flush;
+    };
 
     while(!node_stack.empty()) {
-        // std::cout << "."; std::cout.flush();
         auto & [current,visited] = node_stack.top();
         if(substitution_map.find(current) != substitution_map.end()) {
             node_stack.pop();
@@ -562,53 +619,42 @@ void post_order(smt::Term& root,
             }
             visited = true;
         } else {
-            // std::cout << "-----op: " << current->get_op().to_string() << "-----" << std::endl;
-            // cout << "----current: " << current->to_string() << "----" << endl;
-
             TermVec children(current->begin(), current->end());
 
-
             if(current->is_value()) { // constant
-                // std::cout << "Constant: " << current->to_string().substr(2) << std::endl;
                 auto current_str = current->to_string().substr(2);
                 auto current_bv = btor_bv_char_to_bv(current_str.data());
-                // cout << "current_bv width: " << current_bv->width <<", val:" << current_bv->val << endl;
+                
+                update_progress(SIM_COMP);
                 for (int i = 0; i < num_iterations; ++i) {
                     node_data_map[current].get_simulation_data().push_back(*current_bv);
                 }
-                // btor_bv_free(current_bv);
 
                 assert(node_data_map[current].get_simulation_data().size() == num_iterations);
-                // if you can find a term that is equivalent to this constant
-                // case 1 : that term is also a constant, then they should be the same term (Boolector will merge them)
-                // case 2 : that term is not a constant, you should not merge either
-                // so constant don't need substitution
+                
+                update_progress(MAP_UPDATE);
                 substitution_map.insert({current, current}); 
                 hash_term_map[node_data_map[current].hash()].push_back(current);
+                
+                processed_nodes++;
             } 
             else if(current->is_symbolic_const() && current->get_op().is_null()) { // leaf nodes
-                std::cout << "leaf nodes: " << current->to_string() << std::endl;
-
+                update_progress(MAP_UPDATE);
+                
                 assert(TermVec(current->begin(), current->end()).empty());// no children
                 assert(current->get_sort()->get_sort_kind() != ARRAY); // no array
                 assert(node_data_map.find(current) != node_data_map.end()); // data should be computed
                 assert(node_data_map[current].get_simulation_data().size() == num_iterations);
 
-                //leaf nodes don't need substitution
                 substitution_map.insert({current, current}); 
-
-                //update hash_term_map 
-                // assert(false); // for this example, we should not encounter this case                
+                
+                processed_nodes++;           
             }
             else { // compute simulation data for current node
-                // std::cout << "Computing : " << current->to_string() << std::endl;
-                // std::cout << "Computing : " << current->get_op() << std::endl;
-                
                 TermVec children(current->begin(), current->end()); // find children
                 auto child_size = children.size();
-                // cout << "children size: " << child_size << endl;
 
-                // 1. substitute children
+                update_progress(SUBST_CHECK);
                 bool substitution_happened = false;
                 TermVec children_substituted;
                 children_substitution(children, children_substituted, substitution_map);
@@ -620,15 +666,17 @@ void post_order(smt::Term& root,
                     }
                 
                 auto op_type = current->get_op();
+                
+                update_progress(NEW_NODE);
                 Term cnode = substitution_happened ? solver->make_term(op_type, children_substituted) : current;
 
-                // 2. compute simulation
+                update_progress(SIM_COMP);
                 NodeData sim_data;
                 compute_simulation(children_substituted, num_iterations, op_type, node_data_map, all_luts, sim_data);
                 auto current_hash = sim_data.hash();
 
-                
-                Term  term_eq;
+                update_progress(EQUIV_SEARCH);
+                Term term_eq;
                 if (hash_term_map.find(current_hash) != hash_term_map.end()) {
                     const auto & sim_data_vec = sim_data.get_simulation_data();
                     TermVec terms_for_solving;
@@ -655,8 +703,6 @@ void post_order(smt::Term& root,
                             terms_for_solving.push_back(t);
                     } // end of filtering terms in terms_to_check --> terms_for_solving
                     if (term_eq == nullptr) { // if no structural same term found
-                    //    std::cout << "c"  << terms_for_solving.size();
-                       std::cout.flush();
                        for (const auto & t : terms_for_solving) {
                           auto result = solver->check_sat_assuming(TermVec({solver->make_term(Not, solver->make_term(Equal, t, cnode))}));
                           count ++;
@@ -670,23 +716,70 @@ void post_order(smt::Term& root,
                     } // end of structural_same_term_found
                 }
 
+                update_progress(MAP_UPDATE);
                 if (term_eq) {
                     substitution_map.emplace(current, term_eq);
-                    // std::cout << "s"; std::cout.flush();
                 } else {
                     substitution_map.emplace(current, cnode);
                     hash_term_map[current_hash].push_back(cnode);
                     node_data_map[cnode] = sim_data;
                 }
+                
+                processed_nodes++;
             } // end if it has children
             node_stack.pop();            
         } // end of if visited
     } // end of traversal
+    
+    // End of processing - Print summary statistics
+    std::cout << std::endl;
+    // std::cout << "============================" << std::endl;
+    std::cout << "Sweeping Summary Statistics:" << std::endl;
+    std::cout << "============================" << std::endl;
+    
+    // Count total terms and find top 5 hash values by frequency
+    int total_terms = 0;
+    std::vector<std::pair<uint32_t, size_t>> hash_frequencies;
+    
+    for (const auto& [hash_value, terms] : hash_term_map) {
+        hash_frequencies.push_back({hash_value, terms.size()});
+        total_terms += terms.size();
+    }
+    
+    // Sort by frequency (highest first)
+    std::sort(hash_frequencies.begin(), hash_frequencies.end(), 
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    std::cout << "Total unique hash values: " << hash_term_map.size() << std::endl;
+    std::cout << "Total terms processed: " << total_terms << std::endl;
+    std::cout << "Shared hash value ratio: " << (float)(total_terms - hash_term_map.size()) / total_terms * 100.0 << "%" << std::endl;
+    
+    // Display top 5 hash values with highest term counts
+    std::cout << std::endl;
+    std::cout << "Top 5 Hash Values by Term Frequency:" << std::endl;
+    std::cout << "-----------------------------------" << std::endl;
+    std::cout << std::setw(12) << "Hash Value" << " | " 
+              << std::setw(10) << "Term Count" << " | " 
+              << std::setw(10) << "% of Total" << std::endl;
+    std::cout << "-----------------------------------" << std::endl;
+    
+    int to_display = std::min(5, static_cast<int>(hash_frequencies.size()));
+    for (int i = 0; i < to_display; i++) {
+        const auto& [hash_value, count] = hash_frequencies[i];
+        float percentage = (float)count / total_terms * 100.0;
+        
+        std::cout << std::setw(12) << hash_value << " | " 
+                  << std::setw(10) << count << " | " 
+                  << std::setw(9) << std::fixed << std::setprecision(2) << percentage << "%" << std::endl;
+    }
+    
+    std::cout << "============================" << std::endl;
+    std::cout << "Sweeping done, begin the last solving using bitwuzla for this property" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH>  simulation_iteration_num" << std::endl;
         return 1;
     }
 
@@ -717,6 +810,8 @@ int main(int argc, char* argv[]) {
     TransitionSystem sts(solver);
     BTOR2Encoder btor_parser(btor2_file, sts, "a::");
 
+    std::cout << "============================" << std::endl;
+
     // cout << "Loading and parsing BTOR2 files..." << endl;
 
     const auto& input_terms = btor_parser.inputsvec(); // all input here
@@ -735,6 +830,7 @@ int main(int argc, char* argv[]) {
     std::unordered_map<Term, Term> substitution_map; // term -> term, for substitution
     std::unordered_map<Term, std::unordered_map<std::string, std::string>> all_luts; // state -> lookup table
 
+     std::cout << "stage 1 : init array & simualtion ...";
 
     //Array init
     initialize_arrays(sts, all_luts, substitution_map);
@@ -742,6 +838,8 @@ int main(int argc, char* argv[]) {
 
     //simulation
     simulation(input_terms, num_iterations, sts, node_data_map);
+    std::cout << "done" <<std::endl;
+   
 
     for(auto i : input_terms){
         assert(node_data_map[i].get_simulation_data().size() == num_iterations);
@@ -759,16 +857,17 @@ int main(int argc, char* argv[]) {
     int sat_count = 0;
     int i = 0;
 
-    cout << "Prop: " << property.size() << endl;
+    std::cout << "stage 2 : begin sweeping ... " << std::endl;
+    std::cout << "============================" << std::endl;
+    // cout << "Prop: " << property.size() << endl;
     for(auto root : property) {
-        cout << idvec[i] << " ";
+        
         // cout << root->to_string() << endl;
         post_order(root, node_data_map, hash_term_map, substitution_map, all_luts, count, unsat_count, sat_count, solver, num_iterations);
         root = substitution_map.at(root);
 
-        // cout << endl;
-        
-        
+        // std::cout << "Sweeping done, begin the last solving using bitwuzla for this preperty" << std::endl;
+        cout << "Property ID: " << idvec[i] << " ";
         // print_time();
         // std::cout << "Start checking sat" << std::endl;
         solver->push();
@@ -779,24 +878,27 @@ int main(int argc, char* argv[]) {
         // print_time();
 
         if(res.is_unsat()){
-            std::cout << "UNSAT" << std::endl;
+            std::cout << "Result : UNSAT" << std::endl;
         } else {
-            std::cout << "SAT" << std::endl;
+            std::cout << "Result : SAT" << std::endl;
         }
 
-        cout << "count: " << count << endl;
-        cout << "unsat_count: " << unsat_count << endl;
-        cout << "sat_count: " << sat_count << endl;
+        // cout << "count: " << count << endl;
+        // cout << "unsat_count: " << unsat_count << endl;
+        // cout << "sat_count: " << sat_count << endl;
+        std::cout << "for this property, " << unsat_count << " UNSAT when merging, and " << sat_count << " SAT when merging" << std::endl;
         cout << "-----------------" << endl;
 
         i++;
     }
     // print_time();
     // std::cout << "Start checking sat" << std::endl;
+    std::cout << "All property done" << std:: endl;
 
     auto program_end_time = std::chrono::high_resolution_clock::now();
     auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(program_end_time - program_start_time).count();
     std::cout << "Total execution time: " << total_time / 1000.0 << " s" << std::endl;
+    std::cout << "============================" << std::endl;
 
     return 0;
 }
