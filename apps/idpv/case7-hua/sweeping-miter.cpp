@@ -801,11 +801,12 @@ void post_order(smt::Term& root,
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH> <SIMULATION_ITERATIONS> [SOLVER_TIMEOUT_MS] [PROPERTY_CHECK_TIMEOUT_MS]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH> <SIMULATION_ITERATIONS> [SOLVER_TIMEOUT_MS] [PROPERTY_CHECK_TIMEOUT_MS] [DUMP_SMT]" << std::endl;
         std::cerr << "  BTOR2_FILE_PATH: Path to the BTOR2 file" << std::endl;
         std::cerr << "  SIMULATION_ITERATIONS: Number of simulation iterations" << std::endl;
         std::cerr << "  SOLVER_TIMEOUT_MS: Optional timeout for solver in milliseconds (default: 500000)" << std::endl;
         std::cerr << "  PROPERTY_CHECK_TIMEOUT_MS: Optional timeout for property checking in milliseconds (default: 5000000)" << std::endl;
+        std::cerr << "  DUMP_SMT: Optional flag to enable/disable SMT dumping (0=disable, 1=enable, default: 1)" << std::endl;
         return 1;
     }
 
@@ -886,6 +887,7 @@ int main(int argc, char* argv[]) {
     // Add timeout parameter, default is 5 seconds
     int solver_timeout_ms = 500000;
     int property_check_timeout_ms = 5000000;
+    bool dump_smt = true; // Default is to dump SMT
     
     // Check if there's a third command line argument for solver timeout setting
     if (argc >= 4) {
@@ -909,8 +911,21 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // Check if there's a fifth command line argument for SMT dumping option
+    if (argc >= 6) {
+        try {
+            int dump_smt_int = std::stoi(argv[5]);
+            dump_smt = (dump_smt_int != 0);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Warning: Invalid DUMP_SMT value, using default (enabled)" << std::endl;
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Warning: DUMP_SMT value out of range, using default (enabled)" << std::endl;
+        }
+    }
+    
     std::cout << "Using solver timeout: " << solver_timeout_ms << "ms (" << (solver_timeout_ms / 1000.0) << "s)" << std::endl;
     std::cout << "Using property check timeout: " << property_check_timeout_ms << "ms (" << (property_check_timeout_ms / 1000.0) << "s)" << std::endl;
+    std::cout << "SMT dumping: " << (dump_smt ? "enabled" : "disabled") << std::endl;
 
     // Set the initial solver timeout
     solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
@@ -932,21 +947,24 @@ int main(int argc, char* argv[]) {
         auto not_root = solver->make_term(Not, root);
         solver->assert_formula(not_root);
         
-        // Create a new solver instance for dumping SMT files
-        SmtSolver dump_solver = BitwuzlaSolverFactory::create(false);
-        dump_solver->set_logic("QF_UFBV");
-        
-        // Use TermTranslator to transfer terms to the new solver
-        smt::TermTranslator translator(dump_solver);
-        auto translated_not_root = translator.transfer_term(not_root);
-        dump_solver->assert_formula(translated_not_root);
-        
-        // Dump SMT files using the new solver instance
-        // dump_solver->dump_smt2("property_" + std::to_string(idvec[i]) + ".smt2");
-        std::string safe_path = btor2_file;
-        std::replace(safe_path.begin(), safe_path.end(), '/', '_');
-        std::replace(safe_path.begin(), safe_path.end(), '\\', '_');
-        dump_solver->dump_smt2("property_" + std::to_string(idvec[i]) + "_" + safe_path + ".smt2");
+        if (dump_smt) {
+            // Create a new solver instance for dumping SMT files
+            SmtSolver dump_solver = BitwuzlaSolverFactory::create(false);
+            dump_solver->set_logic("QF_UFBV");
+            
+            // Use TermTranslator to transfer terms to the new solver
+            smt::TermTranslator translator(dump_solver);
+            auto translated_not_root = translator.transfer_term(not_root);
+            dump_solver->assert_formula(translated_not_root);
+            
+            // Dump SMT files using the new solver instance
+            // dump_solver->dump_smt2("property_" + std::to_string(idvec[i]) + ".smt2");
+            std::string safe_path = btor2_file;
+            std::replace(safe_path.begin(), safe_path.end(), '/', '_');
+            std::replace(safe_path.begin(), safe_path.end(), '\\', '_');
+            dump_solver->dump_smt2("property_" + std::to_string(idvec[i]) + "_" + safe_path + ".smt2");
+            std::cout << "SMT file dumped for property " << idvec[i] << std::endl;
+        }
         
         // Set the property check timeout
         solver->set_opt("time-limit", std::to_string(property_check_timeout_ms / 1000.0));
