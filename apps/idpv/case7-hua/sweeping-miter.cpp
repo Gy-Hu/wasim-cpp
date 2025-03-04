@@ -721,7 +721,7 @@ void post_order(smt::Term& root,
                     if (term_eq == nullptr) { // if no structural same term found
                        for (const auto & t : terms_for_solving) {
                           // Set timeout option - Bitwuzla expects time-limit in seconds
-                          solver->set_opt("time-limit", std::to_string(timeout_ms / 1000.0));
+                        //   solver->set_opt("time-limit", std::to_string(timeout_ms / 1000.0));
                           
                           // Record start time
                           auto start_time = std::chrono::high_resolution_clock::now();
@@ -738,7 +738,7 @@ void post_order(smt::Term& root,
                           // Check if timeout occurred
                           if (elapsed >= timeout_ms) {
                               // Timeout, skip current merge
-                              std::cout << "t"; // Output 't' to indicate timeout
+                              std::cout << "-t-"; // Output 't' to indicate timeout
                               std::cout.flush();
                               continue; 
                           }
@@ -817,11 +817,10 @@ void post_order(smt::Term& root,
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH> <SIMULATION_ITERATIONS> [SOLVER_TIMEOUT_MS] [PROPERTY_CHECK_TIMEOUT_MS] [DUMP_SMT]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <BTOR2_FILE_PATH> <SIMULATION_ITERATIONS> [TIMEOUT_MS] [DUMP_SMT]" << std::endl;
         std::cerr << "  BTOR2_FILE_PATH: Path to the BTOR2 file" << std::endl;
         std::cerr << "  SIMULATION_ITERATIONS: Number of simulation iterations" << std::endl;
-        std::cerr << "  SOLVER_TIMEOUT_MS: Optional timeout for solver in milliseconds (default: 500000)" << std::endl;
-        std::cerr << "  PROPERTY_CHECK_TIMEOUT_MS: Optional timeout for property checking in milliseconds (default: 5000000)" << std::endl;
+        std::cerr << "  TIMEOUT_MS: Optional timeout for solver and property checking in milliseconds (default: 50000)" << std::endl;
         std::cerr << "  DUMP_SMT: Optional flag to enable/disable SMT dumping (0=disable, 1=enable, default: 1)" << std::endl;
         return 1;
     }
@@ -832,19 +831,27 @@ int main(int argc, char* argv[]) {
     try {
         num_iterations = std::stoi(argv[2]);
     } catch (const std::invalid_argument& e) {
-        std::cerr << "Error: Invalid number format for NUM_ITERATIONS" << std::endl;
+        std::cerr << "Error: Invalid number format for SIMULATION_ITERATIONS" << std::endl;
         return 1;
     } catch (const std::out_of_range& e) {
-        std::cerr << "Error: NUM_ITERATIONS is out of range" << std::endl;
+        std::cerr << "Error: SIMULATION_ITERATIONS is out of range" << std::endl;
         return 1;
     }
 
     auto program_start_time = std::chrono::high_resolution_clock::now();
     last_time_point = program_start_time;
 
-    // Add timeout parameter, default is 5 seconds
-    int solver_timeout_ms = 50000;
-    int property_check_timeout_ms = 50000;
+    // Single timeout parameter for both solver and property checking; default is 50000 ms
+    int timeout_ms = 50000;
+    if (argc >= 4) {
+        try {
+            timeout_ms = std::stoi(argv[3]);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Warning: Invalid timeout value, using default (50000ms)" << std::endl;
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Warning: Timeout value out of range, using default (50000ms)" << std::endl;
+        }
+    }
 
     SmtSolver solver = BitwuzlaSolverFactory::create(false);
 
@@ -852,7 +859,7 @@ int main(int argc, char* argv[]) {
     solver->set_opt("incremental", "true");
     solver->set_opt("produce-models", "true");
     solver->set_opt("produce-unsat-assumptions", "true");
-    solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
+    solver->set_opt("time-limit", std::to_string(timeout_ms / 1000.0));
 
     // Loading and parsing BTOR2 files
     TransitionSystem sts(solver);
@@ -860,80 +867,48 @@ int main(int argc, char* argv[]) {
 
     std::cout << "============================" << std::endl;
 
-    // cout << "Loading and parsing BTOR2 files..." << endl;
-
     const auto& input_terms = btor_parser.inputsvec(); // all input here
     const auto& output_terms = btor_parser.get_output_terms(); // all output here
     const auto& constraints = btor_parser.get_const_terms(); // all constraints here
     const auto& property = btor_parser.propvec(); // all properties here
     const auto& idvec = btor_parser.idvec();
 
-    // cout << "Constraints: " << constraints.size() << endl;
     for(auto c : constraints) {
         solver->assert_formula(c);
     }
 
-    std::unordered_map<Term, NodeData> node_data_map; // term -> sim_data
+    std::unordered_map<Term, NodeData> node_data_map; // term -> simulation data
     std::unordered_map<uint32_t, TermVec> hash_term_map; // hash -> TermVec
     std::unordered_map<Term, Term> substitution_map; // term -> term, for substitution
     std::unordered_map<Term, std::unordered_map<std::string, std::string>> all_luts; // state -> lookup table
 
-     std::cout << "stage 1 : init array & simualtion ...";
-
-    //Array init
+    std::cout << "stage 1 : init array & simulation ...";
+    // Array initialization
     initialize_arrays(sts, all_luts, substitution_map);
-    //End of array init
-
-    //simulation
+    // Simulation
     simulation(input_terms, num_iterations, sts, node_data_map);
-    std::cout << "done" <<std::endl;
+    std::cout << "done" << std::endl;
    
-
-    for(auto i : input_terms){
+    for(auto i : input_terms) {
         assert(node_data_map[i].get_simulation_data().size() == num_iterations);
         substitution_map.insert({i, i});
         hash_term_map[node_data_map[i].hash()].push_back(i);
     }
-    //end of simulation
 
     solver->assert_formula(sts.init());
-    for (const auto & c : sts.constraints()) solver->assert_formula(c.first);
+    for (const auto & c : sts.constraints()) {
+        solver->assert_formula(c.first);
+    }
     
-    //start post order traversal
     int count = 0;
     int unsat_count = 0;
     int sat_count = 0;
     int i = 0;
     
-    
     bool dump_smt = true; // Default is to dump SMT
-    
-    // Check if there's a third command line argument for solver timeout setting
-    if (argc >= 4) {
-        try {
-            solver_timeout_ms = std::stoi(argv[3]);
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Warning: Invalid solver timeout value, using default (5000ms)" << std::endl;
-        } catch (const std::out_of_range& e) {
-            std::cerr << "Warning: Solver timeout value out of range, using default (5000ms)" << std::endl;
-        }
-    }
-    
-    // Check if there's a fourth command line argument for property check timeout setting
     if (argc >= 5) {
         try {
-            property_check_timeout_ms = std::stoi(argv[4]);
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Warning: Invalid property check timeout value, using default (5000ms)" << std::endl;
-        } catch (const std::out_of_range& e) {
-            std::cerr << "Warning: Property check timeout value out of range, using default (5000ms)" << std::endl;
-        }
-    }
-    
-    // Check if there's a fifth command line argument for SMT dumping option
-    if (argc >= 6) {
-        try {
-            int dump_smt_int = std::stoi(argv[5]);
+            int dump_smt_int = std::stoi(argv[4]);
             dump_smt = (dump_smt_int != 0);
         } catch (const std::invalid_argument& e) {
             std::cerr << "Warning: Invalid DUMP_SMT value, using default (enabled)" << std::endl;
@@ -942,42 +917,28 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    std::cout << "Using solver timeout: " << solver_timeout_ms << "ms (" << (solver_timeout_ms / 1000.0) << "s)" << std::endl;
-    std::cout << "Using property check timeout: " << property_check_timeout_ms << "ms (" << (property_check_timeout_ms / 1000.0) << "s)" << std::endl;
+    std::cout << "Using timeout: " << timeout_ms << "ms (" << (timeout_ms / 1000.0) << "s)" << std::endl;
     std::cout << "SMT dumping: " << (dump_smt ? "enabled" : "disabled") << std::endl;
-
-    // Set the initial solver timeout
-    // solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
 
     std::cout << "stage 2 : begin sweeping ... " << std::endl;
     std::cout << "============================" << std::endl;
-    // cout << "Prop: " << property.size() << endl;
+    
     for(auto root : property) {
-        
-        // cout << root->to_string() << endl;
-        post_order(root, node_data_map, hash_term_map, substitution_map, all_luts, count, unsat_count, sat_count, solver, num_iterations, solver_timeout_ms);
+        post_order(root, node_data_map, hash_term_map, substitution_map, all_luts, count, unsat_count, sat_count, solver, num_iterations, timeout_ms);
         root = substitution_map.at(root);
 
-        // std::cout << "Sweeping done, begin the last solving using bitwuzla for this preperty" << std::endl;
-        cout << "Property ID: " << idvec[i] << " ";
-        // print_time();
-        // std::cout << "Start checking sat" << std::endl;
+        std::cout << "Property ID: " << idvec[i] << " ";
         solver->push();
         auto not_root = solver->make_term(Not, root);
         solver->assert_formula(not_root);
         
         if (dump_smt) {
-            // Create a new solver instance for dumping SMT files
             SmtSolver dump_solver = BitwuzlaSolverFactory::create(false);
             dump_solver->set_logic("QF_UFBV");
-            
-            // Use TermTranslator to transfer terms to the new solver
             smt::TermTranslator translator(dump_solver);
             auto translated_not_root = translator.transfer_term(not_root);
             dump_solver->assert_formula(translated_not_root);
             
-            // Dump SMT files using the new solver instance
-            // dump_solver->dump_smt2("property_" + std::to_string(idvec[i]) + ".smt2");
             std::string safe_path = btor2_file;
             std::replace(safe_path.begin(), safe_path.end(), '/', '_');
             std::replace(safe_path.begin(), safe_path.end(), '\\', '_');
@@ -985,42 +946,30 @@ int main(int argc, char* argv[]) {
             std::cout << "SMT file dumped for property " << idvec[i] << std::endl;
         }
         
-        // Set the property check timeout
-        // solver->set_opt("time-limit", std::to_string(property_check_timeout_ms / 1000.0));
-        std::cout << "Property check timeout set to: " << property_check_timeout_ms << "ms (" << (property_check_timeout_ms / 1000.0) << "s)" << std::endl;
+        std::cout << "Timeout used for property checking: " << timeout_ms << "ms (" << (timeout_ms / 1000.0) << "s)" << std::endl;
         
-        // Continue with the original solver for checking satisfiability
         auto start_time = std::chrono::high_resolution_clock::now();
         auto res = solver->check_sat();
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
         
         solver->pop();
-        // print_time();
 
-        // Reset the timeout to the original solver timeout
-        // solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
-
-        if(res.is_unsat()){
+        if (res.is_unsat()) {
             std::cout << "Result : UNSAT (took " << duration << "ms)" << std::endl;
-        } else if(res.is_sat()) {
+        } else if (res.is_sat()) {
             std::cout << "Result : SAT (took " << duration << "ms)" << std::endl;
         } else {
             std::cout << "Result : UNKNOWN - likely timed out after " << duration << "ms" << std::endl;
         }
 
-        // cout << "count: " << count << endl;
-        // cout << "unsat_count: " << unsat_count << endl;
-        // cout << "sat_count: " << sat_count << endl;
-        std::cout << "for this property, " << unsat_count << " UNSAT when merging, and " << sat_count << " SAT when merging" << std::endl;
-        cout << "-----------------" << endl;
+        std::cout << "For this property, " << unsat_count << " UNSAT when merging, and " << sat_count << " SAT when merging" << std::endl;
+        std::cout << "-----------------" << std::endl;
 
         i++;
     }
-    // print_time();
-    // std::cout << "Start checking sat" << std::endl;
-    std::cout << "All property done" << std:: endl;
-
+    
+    std::cout << "All property done" << std::endl;
     auto program_end_time = std::chrono::high_resolution_clock::now();
     auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(program_end_time - program_start_time).count();
     std::cout << "Total execution time: " << total_time / 1000.0 << " s" << std::endl;
