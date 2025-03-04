@@ -268,6 +268,22 @@ void btor_bv_operation_2children(const smt::Op& op,
         auto current_val = btor_bv_srem(&btor_child_1, &btor_child_2);
         nd.get_simulation_data().push_back(*current_val);
     }
+    else if(op.prim_op == PrimOp::BVLshr) {
+        auto current_val = btor_bv_srl(&btor_child_1, &btor_child_2);
+        nd.get_simulation_data().push_back(*current_val);
+    }
+    else if(op.prim_op == PrimOp::BVAshr) {
+        auto current_val = btor_bv_sra(&btor_child_1, &btor_child_2);
+        nd.get_simulation_data().push_back(*current_val);
+    }
+    else if(op.prim_op == PrimOp::BVShl) {
+        auto current_val = btor_bv_sll(&btor_child_1, &btor_child_2);
+        nd.get_simulation_data().push_back(*current_val);
+    }
+    else if(op.prim_op == PrimOp::Implies) {
+        auto current_val = btor_bv_implies(&btor_child_1, &btor_child_2);
+        nd.get_simulation_data().push_back(*current_val);
+    }
     else {
         cout << "Unsupported operation type 2 children: " << op.to_string() << endl;
         throw NotImplementedException("Unsupported operation type 2 children: " + op.to_string());
@@ -724,7 +740,7 @@ void post_order(smt::Term& root,
                               // Timeout, skip current merge
                               std::cout << "t"; // Output 't' to indicate timeout
                               std::cout.flush();
-                              continue;
+                              continue; 
                           }
                           
                           if (result.is_unsat()) {
@@ -826,12 +842,17 @@ int main(int argc, char* argv[]) {
     auto program_start_time = std::chrono::high_resolution_clock::now();
     last_time_point = program_start_time;
 
+    // Add timeout parameter, default is 5 seconds
+    int solver_timeout_ms = 500000;
+    int property_check_timeout_ms = 5000000;
+
     SmtSolver solver = BitwuzlaSolverFactory::create(false);
 
     solver->set_logic("QF_UFBV");
     solver->set_opt("incremental", "true");
     solver->set_opt("produce-models", "true");
     solver->set_opt("produce-unsat-assumptions", "true");
+    solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
 
     // Loading and parsing BTOR2 files
     TransitionSystem sts(solver);
@@ -884,9 +905,7 @@ int main(int argc, char* argv[]) {
     int sat_count = 0;
     int i = 0;
     
-    // Add timeout parameter, default is 5 seconds
-    int solver_timeout_ms = 500000;
-    int property_check_timeout_ms = 5000000;
+    
     bool dump_smt = true; // Default is to dump SMT
     
     // Check if there's a third command line argument for solver timeout setting

@@ -1464,3 +1464,310 @@ BtorBitVector *btor_bv_srem (const BtorBitVector *a, const BtorBitVector *b)
   }
   return res;
 }
+
+BtorBitVector *btor_bv_srl_uint64 (const BtorBitVector *a, uint64_t shift)
+{
+  assert (a);
+
+  BtorBitVector *res;
+
+  res = btor_bv_new (a->width);
+  if (shift >= a->width) return res;
+#ifdef BTOR_USE_GMP
+  mpz_fdiv_q_2exp (res->val, a->val, shift);
+#else
+  uint32_t skip, i, j, k;
+  BTOR_BV_TYPE v;
+  k = shift % BTOR_BV_TYPE_BW;
+  skip = shift / BTOR_BV_TYPE_BW;
+  v = 0;
+  for (i = 0, j = skip; i < a->len && j < a->len; i++, j++)
+  {
+    v = (k == 0) ? a->bits[i] : v | (a->bits[i] >> k);
+    res->bits[j] = v;
+    v = (k == 0) ? a->bits[i] : a->bits[i] << (BTOR_BV_TYPE_BW - k);
+  }
+  assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+
+#ifdef BTOR_USE_GMP
+static uint32_t
+get_limb (const BtorBitVector *bv,
+          mp_limb_t *limb,
+          uint32_t nbits_rem,
+          bool zeros)
+{
+  /* GMP normalizes the limbs, the left most (most significant) is never 0 */
+  uint32_t i, n_limbs, n_limbs_total;
+  mp_limb_t res = 0u, mask;
+
+  n_limbs = mpz_size (bv->val);
+
+  /* for leading zeros */
+  if (zeros)
+  {
+    *limb = n_limbs ? mpz_getlimbn (bv->val, n_limbs - 1) : 0;
+    return n_limbs;
+  }
+
+  /* for leading ones */
+  n_limbs_total = bv->width / mp_bits_per_limb + (nbits_rem ? 1 : 0);
+  if (n_limbs != n_limbs_total)
+  {
+    /* no leading ones, simulate */
+    *limb = nbits_rem ? ~(~((mp_limb_t) 0) << nbits_rem) : ~((mp_limb_t) 0);
+    return n_limbs_total;
+  }
+  mask = ~((mp_limb_t) 0) << nbits_rem;
+  for (i = 0; i < n_limbs; i++)
+  {
+    res = mpz_getlimbn (bv->val, n_limbs - 1 - i);
+    if (nbits_rem && i == 0)
+    {
+      res = res | mask;
+    }
+    res = ~res;
+    if (res > 0) break;
+  }
+  *limb = res;
+  return n_limbs - i;
+}
+#else
+static uint32_t
+get_limb (const BtorBitVector *bv,
+          BTOR_BV_TYPE *limb,
+          uint32_t nbits_rem,
+          bool zeros)
+{
+  uint32_t i;
+  BTOR_BV_TYPE res = 0u, mask;
+
+  /* for leading zeros */
+  if (zeros)
+  {
+    for (i = 0; i < bv->len; i++)
+    {
+      res = bv->bits[i];
+      if (res > 0) break;
+    }
+  }
+  /* for leading ones */
+  else
+  {
+    mask = ~((BTOR_BV_TYPE) 0) << nbits_rem;
+    for (i = 0; i < bv->len; i++)
+    {
+      res = bv->bits[i];
+      if (nbits_rem && i == 0)
+      {
+        res = res | mask;
+      }
+      res = ~res;
+      if (res > 0) break;
+    }
+  }
+
+  *limb = res;
+  return bv->len - i;
+}
+#endif
+
+
+
+static uint32_t
+get_num_leading (const BtorBitVector *bv, bool zeros)
+{
+  assert (bv);
+
+  uint32_t res = 0, nbits_pad;
+  /* The number of limbs required to represent the actual value.
+   * Zero limbs are disregarded. */
+  uint32_t n_limbs;
+  /* Number of limbs required when representing all bits. */
+  uint32_t n_limbs_total;
+  /* The number of bits that spill over into the most significant limb,
+   * assuming that all bits are represented). Zero if the bit-width is a
+   * multiple of n_bits_per_limb. */
+  uint32_t nbits_rem;
+  uint32_t nbits_per_limb;
+#ifdef BTOR_USE_GMP
+  mp_limb_t limb;
+#else
+  BTOR_BV_TYPE limb;
+#endif
+
+#ifdef BTOR_USE_GMP
+  nbits_per_limb = mp_bits_per_limb;
+#else
+  nbits_per_limb = BTOR_BV_TYPE_BW;
+#endif
+
+  nbits_rem = bv->width % nbits_per_limb;
+
+  n_limbs = get_limb (bv, &limb, nbits_rem, zeros);
+  if (n_limbs == 0) return bv->width;
+
+#if defined(__GNUC__) || defined(__clang__)
+  res = nbits_per_limb == 64 ? __builtin_clzll (limb) : __builtin_clz (limb);
+#else
+  res = clz_limb (nbits_per_limb, limb);
+#endif
+  n_limbs_total = bv->width / nbits_per_limb + 1;
+  nbits_pad     = nbits_per_limb - nbits_rem;
+  res += (n_limbs_total - n_limbs) * nbits_per_limb - nbits_pad;
+  return res;
+}
+
+uint32_t btor_bv_get_num_leading_zeros (const BtorBitVector *bv)
+{
+  return get_num_leading (bv, true);
+}
+
+static bool shift_is_uint64 (
+                 const BtorBitVector *b,
+                 uint64_t *res)
+{
+  assert (b);
+  assert (res);
+
+  uint64_t zeroes;
+  BtorBitVector *shift;
+
+  if (b->width <= 64)
+  {
+    *res = btor_bv_to_uint64 (b);
+    return true;
+  }
+
+  zeroes = btor_bv_get_num_leading_zeros (b);
+  if (zeroes < b->width - 64) return false;
+
+  shift =
+      btor_bv_slice (b, zeroes < b->width ? b->width - 1 - zeroes : 0, 0);
+  assert (shift->width <= 64);
+  *res = btor_bv_to_uint64 (shift);
+  btor_bv_free (shift);
+  return true;
+}
+
+BtorBitVector *btor_bv_srl (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  uint64_t ushift;
+
+  if (shift_is_uint64 (b, &ushift))
+  {
+    return btor_bv_srl_uint64 (a, ushift);
+  }
+  return btor_bv_new (a->width);
+}
+
+BtorBitVector *btor_bv_sra (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  BtorBitVector *res;
+  if (btor_bv_get_bit (a, a->width - 1))
+  {
+    BtorBitVector *not_a       = btor_bv_not (a);
+    BtorBitVector *not_a_srl_b = btor_bv_srl (not_a, b);
+    res                        = btor_bv_not (not_a_srl_b);
+    btor_bv_free (not_a);
+    btor_bv_free (not_a_srl_b);
+  }
+  else
+  {
+    res = btor_bv_srl (a, b);
+  }
+#ifndef BTOR_USE_GMP
+  assert (rem_bits_zero_dbg (res));
+#endif
+  return res;
+}
+
+
+#ifndef NDEBUG
+static bool
+check_bits_sll_dbg (const BtorBitVector *bv,
+                    const BtorBitVector *res,
+                    uint32_t shift)
+{
+  assert (bv);
+  assert (res);
+  assert (bv->width == res->width);
+
+  uint32_t i;
+
+  if (shift >= bv->width)
+  {
+    for (i = 0; i < bv->width; i++) assert (btor_bv_get_bit (bv, i) == 0);
+  }
+  else
+  {
+    for (i = 0; shift + i < bv->width; i++)
+      assert (btor_bv_get_bit (bv, i) == btor_bv_get_bit (res, shift + i));
+  }
+
+  return true;
+}
+#endif
+
+
+BtorBitVector *btor_bv_sll_uint64 (const BtorBitVector *a, uint64_t shift)
+{
+  assert (a);
+
+  BtorBitVector *res;
+  uint32_t bw = a->width;
+
+  res = btor_bv_new (bw);
+  if (shift >= bw) return res;
+
+#ifdef BTOR_USE_GMP
+  mpz_mul_2exp (res->val, a->val, shift);
+  mpz_fdiv_r_2exp (res->val, res->val, bw);
+#else
+  uint32_t skip, i, j, k;
+  BTOR_BV_TYPE v;
+
+  k    = shift % BTOR_BV_TYPE_BW;
+  skip = shift / BTOR_BV_TYPE_BW;
+
+  v = 0;
+  for (i = a->len - 1, j = res->len - 1 - skip;; i--, j--)
+  {
+    v            = (k == 0) ? a->bits[i] : v | (a->bits[i] << k);
+    res->bits[j] = v;
+    v            = (k == 0) ? a->bits[i] : a->bits[i] >> (BTOR_BV_TYPE_BW - k);
+    if (i == 0 || j == 0) break;
+  }
+  set_rem_bits_to_zero (res);
+  assert (rem_bits_zero_dbg (res));
+#endif
+  assert (check_bits_sll_dbg (a, res, shift));
+  return res;
+}
+
+
+BtorBitVector *btor_bv_sll (const BtorBitVector *a, const BtorBitVector *b)
+{
+  assert (a);
+  assert (b);
+  assert (a->width == b->width);
+
+  uint64_t ushift;
+
+  if (shift_is_uint64 (b, &ushift))
+  {
+    return btor_bv_sll_uint64 (a, ushift);
+  }
+  return btor_bv_new (a->width);
+}
