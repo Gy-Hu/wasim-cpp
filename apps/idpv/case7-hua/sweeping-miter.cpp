@@ -843,8 +843,8 @@ int main(int argc, char* argv[]) {
     last_time_point = program_start_time;
 
     // Add timeout parameter, default is 5 seconds
-    int solver_timeout_ms = 500000;
-    int property_check_timeout_ms = 5000000;
+    int solver_timeout_ms = 50000;
+    int property_check_timeout_ms = 50000;
 
     SmtSolver solver = BitwuzlaSolverFactory::create(false);
 
@@ -947,7 +947,7 @@ int main(int argc, char* argv[]) {
     std::cout << "SMT dumping: " << (dump_smt ? "enabled" : "disabled") << std::endl;
 
     // Set the initial solver timeout
-    solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
+    // solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
 
     std::cout << "stage 2 : begin sweeping ... " << std::endl;
     std::cout << "============================" << std::endl;
@@ -986,7 +986,7 @@ int main(int argc, char* argv[]) {
         }
         
         // Set the property check timeout
-        solver->set_opt("time-limit", std::to_string(property_check_timeout_ms / 1000.0));
+        // solver->set_opt("time-limit", std::to_string(property_check_timeout_ms / 1000.0));
         std::cout << "Property check timeout set to: " << property_check_timeout_ms << "ms (" << (property_check_timeout_ms / 1000.0) << "s)" << std::endl;
         
         // Continue with the original solver for checking satisfiability
@@ -999,7 +999,7 @@ int main(int argc, char* argv[]) {
         // print_time();
 
         // Reset the timeout to the original solver timeout
-        solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
+        // solver->set_opt("time-limit", std::to_string(solver_timeout_ms / 1000.0));
 
         if(res.is_unsat()){
             std::cout << "Result : UNSAT (took " << duration << "ms)" << std::endl;
