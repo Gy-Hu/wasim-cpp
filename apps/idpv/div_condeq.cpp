@@ -9,19 +9,19 @@
 #include "frontend/btor2_encoder.h"
 #include "framework/symsim.h"
 #include "framework/ts.h"
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/smtlib_reader.h"
 
 using namespace wasim;
 using namespace smt;
 
-int main() {    
+int main() {
     using std::chrono::high_resolution_clock;
     using std::chrono::duration_cast;
     using std::chrono::duration;
     using std::chrono::milliseconds;
 
-    SmtSolver solver = BoolectorSolverFactory::create(false);
+    SmtSolver solver = BitwuzlaSolverFactory::create(false);
     solver->set_logic("QF_UFBV");
     solver->set_opt("incremental", "true");
     solver->set_opt("produce-models", "true");

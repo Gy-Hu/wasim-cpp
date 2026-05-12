@@ -152,11 +152,15 @@ target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
 # cvc5 disabled on macOS (Linux-only upstream binary)
 # target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
 # boolector internally uses cadical; the smt-switch repack rule does not bundle it on macOS
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/boolector/deps/cadical/build/libcadical.a")
+# bitwuzla also links cadical (its own copy) and btor2parser
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/deps/cadical/build/libcadical.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/bitwuzla/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")

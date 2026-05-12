@@ -43,3 +43,6 @@ output/
 .metals/
 .bsp/
 .scala-build/
+
+# Claude Code local session metadata
+.claude/
