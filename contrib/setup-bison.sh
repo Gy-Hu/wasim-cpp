@@ -25,7 +25,7 @@ mv ./bison-3.7 ./bison
 cd bison
 mkdir bison-install
 ./configure --prefix $DEPS/bison/bison-install --exec-prefix $DEPS/bison/bison-install
-make -j$(nproc)
+make -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
 make install
 cd $DIR
 

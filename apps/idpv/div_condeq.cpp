@@ -33,7 +33,7 @@ int main() {
     BTOR2Encoder btor_parser("../design/idpv-test/div_case/suoglu_div.btor2", sts);
     std::cout << "Trans:" << sts.trans()->to_string() << std::endl;
 
-    SymbolicExecutor executor(sts,solver);
+    SymbolicSimulator executor(sts,solver);
     assignment_type initdiv = {};
     auto initial_state = executor.convert(initdiv);
     executor.init(initial_state);

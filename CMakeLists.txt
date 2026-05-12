@@ -41,6 +41,9 @@ list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/deps/flex/flex-install")
 if (APPLE)
   list(APPEND CMAKE_PREFIX_PATH "/usr/local/opt/bison")
   list(APPEND CMAKE_PREFIX_PATH "/usr/local/opt/flex")
+  # Apple Silicon (Homebrew installs to /opt/homebrew on ARM64)
+  list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/bison")
+  list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/flex")
 endif()
 find_package(BISON 3.4.2 REQUIRED)
 find_package(FLEX 2.6.4 REQUIRED)
@@ -57,7 +60,8 @@ message("-- FOUND FLEX EXECUTABLE: ${FLEX_EXECUTABLE}")
 message("-- FOUND FLEX INCLUDE DIRS: ${FLEX_INCLUDE_DIRS}")
 
 
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Boost REQUIRED COMPONENTS filesystem)
+# boost::system is header-only since Boost 1.66; brew's boost 1.90 no longer ships libboost_system
 MESSAGE( STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}.")
 MESSAGE( STATUS "Boost_LIBRARY_DIRS = ${Boost_LIBRARY_DIRS}.")
 MESSAGE( STATUS "Boost_LIBRARIES = ${Boost_LIBRARIES}.")
@@ -128,9 +132,11 @@ set(SOURCES
     "${PROJECT_SOURCE_DIR}/framework/symsim.cpp"
     "${PROJECT_SOURCE_DIR}/framework/independence_check.cpp"
     "${PROJECT_SOURCE_DIR}/framework/tracemgr.cpp"
-    "${PROJECT_SOURCE_DIR}/framework/symtraverse.cpp"
+    # symtraverse.cpp excluded: pulls in sygus_simplify (disabled on macOS); div_condeq doesn't use SymbolicTraverse
+    # "${PROJECT_SOURCE_DIR}/framework/symtraverse.cpp"
     "${PROJECT_SOURCE_DIR}/framework/term_manip.cpp"
-    "${PROJECT_SOURCE_DIR}/framework/sygus_simplify.cpp"
+    # sygus_simplify.cpp excluded: needs cvc5 (disabled on macOS) + legacy boost::process API
+    # "${PROJECT_SOURCE_DIR}/framework/sygus_simplify.cpp"
     "${PROJECT_SOURCE_DIR}/framework/state_simplify.cpp"
     "${PROJECT_SOURCE_DIR}/framework/egraph/json_export.cpp"
     "${PROJECT_SOURCE_DIR}/utils/logger.cpp"
@@ -146,13 +152,16 @@ target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
-target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
+# cvc5 disabled on macOS (Linux-only upstream binary)
+# target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
+# boolector internally uses cadical; the smt-switch repack rule does not bundle it on macOS
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/deps/boolector/deps/cadical/build/libcadical.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
 target_link_libraries(wasim-lib PUBLIC pthread)
-target_link_libraries(wasim-lib PUBLIC Boost::system)
+# target_link_libraries(wasim-lib PUBLIC Boost::system)  # header-only since Boost 1.66
 
 find_library(UNWIND_LIB unwind)
 if(UNWIND_LIB)
@@ -284,8 +293,8 @@ endif()
 # add_executable(testdivuu "apps/idpv/div_uu_test.cpp")
 # target_link_libraries(testdivuu wasim-lib)
 
-# add_executable(testdivcondeq "apps/idpv/div_condeq.cpp")
-# target_link_libraries(testdivcondeq wasim-lib)
+add_executable(testdivcondeq "apps/idpv/div_condeq.cpp")
+target_link_libraries(testdivcondeq wasim-lib)
 
 add_executable(test_aes "apps/idpv/aes.cpp")
 target_link_libraries(test_aes wasim-lib)

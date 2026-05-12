@@ -27,7 +27,7 @@ mv flex-2.6.4 flex
 cd flex
 mkdir flex-install
 ./configure --prefix $DEPS/flex/flex-install --exec-prefix $DEPS/flex/flex-install
-make -j$(nproc)
+make -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
 make install
 cd $DIR
 

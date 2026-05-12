@@ -51,16 +51,18 @@ if [ ! -d "$DEPS/smt-switch" ]; then
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
     ./contrib/setup-btor.sh
-    cd deps
-    wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.1.2/cvc5-Linux-static.zip
-    unzip cvc5-Linux-static.zip -d .
-    cd ..
-    CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5-Linux-static"
-    
+    # NOTE: cvc5 step disabled on macOS (Linux-only static binary upstream).
+    # div_condeq.cpp only uses Boolector, so cvc5 is not needed for this case.
+    # cd deps
+    # wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.1.2/cvc5-Linux-static.zip
+    # unzip cvc5-Linux-static.zip -d .
+    # cd ..
+    # CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5-Linux-static"
+
     # pass bison/flex directories from smt-switch perspective
-    ./configure.sh --btor --cvc5 $CONF_OPTS --prefix=local --static --smtlib-reader --bison-dir=../bison/bison-install --flex-dir=../flex/flex-install
+    ./configure.sh --btor $CONF_OPTS --prefix=local --static --smtlib-reader --bison-dir=../bison/bison-install --flex-dir=../flex/flex-install
     cd build
-    make -j$(nproc)
+    make -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
     # TODO put this back
     # temporarily disable due to test-disjointset issue
     # make test
